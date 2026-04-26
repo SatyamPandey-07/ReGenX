@@ -245,39 +245,48 @@ const BioScanner = (() => {
     r /= count; g /= count; b /= count;
     brightness = (r + g + b) / 3;
 
-    // ── THE VISUAL HEURISTIC ENGINE 2.0 ──
+    // ── THE VISUAL HEURISTIC ENGINE 3.0 (Texture & Bio-Signature) ──
     const greenRatio = g / (r + 1); 
     const isBright = brightness > 190; 
     
-    // 1. Strict Skin-Tone detection
-    const isSkinLike = (r > 100 && g > 70 && b > 50 && r > g && g > b && (r - g) > 15 && (r - b) > 30);
+    // 1. Texture Complexity (Variance Check)
+    // Real waste is "noisy" and irregular. Skin and Walls are "smooth".
+    let variance = 0;
+    for (let i = 0; i < imgData.length - 40; i += 40) {
+      variance += Math.abs(imgData[i] - imgData[i+40]);
+    }
+    const avgVar = variance / count;
+    const isTooSmooth = avgVar < 18; // Smooth = Non-waste (Skin, Walls, Paper-sheets)
+
+    // 2. Advanced Skin-Tone Detection
+    const isSkinLike = (r > 80 && r > g && r > b && (r-g) > 10 && (r-b) > 20 && brightness > 50 && brightness < 220);
     
-    // 2. High-Contrast / Text Detection (Calculates edge density)
+    // 3. Document/Text Detection (Edge Density)
     let edgeDensity = 0;
     for (let i = 0; i < imgData.length - 40; i += 40) {
-      const diff = Math.abs(imgData[i] - imgData[i+40]); // Brightness diff between neighbors
-      if (diff > 50) edgeDensity++; // Sharp edge detected
+      if (Math.abs(imgData[i] - imgData[i+40]) > 60) edgeDensity++; 
     }
-    const isTextLike = edgeDensity > (count * 0.15); // Too many sharp edges = likely text/docs
-    
-    // 3. Neutral background detection (White/Grey walls)
-    const isTooNeutral = Math.abs(r-g) < 8 && Math.abs(g-b) < 8 && Math.abs(r-b) < 8;
-    
-    let score = 55; 
-    if (greenRatio > 1.1) score += 20; 
-    if (greenRatio > 1.3) score += 15; 
-    if (isBright) score -= 35; 
-    if (brightness < 50) score -= 15; 
-    
+    const isTextLike = edgeDensity > (count * 0.12);
+
+    // 4. Bio-Signatures
+    const isFoodWaste = greenRatio > 1.1 || (r > 60 && g > 60 && b < 50); // Green or Yellowish
+    const isPaperWaste = !isTextLike && brightness > 160 && avgVar > 20; // White but "crunchy" texture
+
     let invalidReason = null;
-    if (isSkinLike) invalidReason = "HUMAN_DETECTED";
-    if (isTextLike) invalidReason = "TEXT_DETECTED";
-    if (isTooNeutral && brightness > 120) invalidReason = "BLANK_DETECTED";
+    if (isSkinLike && isTooSmooth) invalidReason = "HUMAN_DETECTED";
+    else if (isTextLike) invalidReason = "TEXT_DETECTED";
+    else if (isTooSmooth && brightness > 80) invalidReason = "BLANK_DETECTED";
+
+    // Scoring Logic
+    let score = 50;
+    if (isFoodWaste) score += 35;
+    if (isPaperWaste) score += 25;
+    if (isBright && !isPaperWaste) score -= 40; // Plastic/Metal penalty
 
     return {
-      score: Math.max(10, Math.min(100, Math.floor(score))),
-      isGreen: greenRatio > 1.1,
-      isBright: isBright,
+      score: Math.max(5, Math.min(100, Math.floor(score))),
+      isFood: isFoodWaste,
+      isPaper: isPaperWaste,
       invalidReason: invalidReason
     };
   }
@@ -295,15 +304,15 @@ const BioScanner = (() => {
       <div class="result-panel">
         <div class="analyzing-box">
           <div class="bw-spinner"></div>
-          <div style="font-family:var(--font,sans-serif);font-size:18px;font-weight:700;">IoT Visual Analysis…</div>
+          <div style="font-family:var(--font,sans-serif);font-size:18px;font-weight:700;">Analyzing Material Texture…</div>
           <div class="scan-dots">
             <div class="scan-dot"></div><div class="scan-dot"></div><div class="scan-dot"></div>
           </div>
-          <div class="scan-steps" id="bws-step-txt">Calculating pixel density & reflectance</div>
+          <div class="scan-steps" id="bws-step-txt">Detecting surface complexity & bio-signature</div>
         </div>
       </div>`;
 
-    const steps = ['Identifying material color profile...', 'Checking surface reflectivity...', 'Estimating organic composition...', 'Finalizing IoT report...'];
+    const steps = ['Sampling texture variance...', 'Checking chlorophyll/cellulose levels...', 'Scanning for non-waste patterns...', 'Compiling IoT telemetry...'];
     let si = 0;
     const stepInt = setInterval(() => {
       const el = document.getElementById('bws-step-txt');
@@ -319,7 +328,7 @@ const BioScanner = (() => {
       }
 
       const score = visualData.score;
-      const isOrganic = score > 65;
+      const isOrganic = score > 60;
       
       let grade, summary, items, suit;
 
