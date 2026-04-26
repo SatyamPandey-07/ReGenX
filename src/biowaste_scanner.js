@@ -13,8 +13,8 @@ const BioScanner = (() => {
     let __imageB64 = null;
     let __opts = {};
     let __apiKey = '';
-    let __aiProvider = 'gemini';
-    let __tfModel = null; // Real AI Model
+    let __aiProvider = 'openai'; // Default to OpenAI for expert biogas analysis
+    let __tfModel = null; 
 
     // ── Storage helpers ────────────────────────────────────────────────────────
     const __storage = {
@@ -94,10 +94,11 @@ const BioScanner = (() => {
           
           <div class="form-group">
             <label class="form-label">AI Provider</label>
-            <select id="bws-ai-provider" class="form-select" onchange="BioScanner.__updateProvider()">
-              <option value="gemini" ${__aiProvider === 'gemini' ? 'selected' : ''}>Google Gemini (1.5 Flash)</option>
-              <option value="anthropic" ${__aiProvider === 'anthropic' ? 'selected' : ''}>Anthropic Claude (3.5 Sonnet)</option>
-            </select>
+                        <select id="bws-ai-provider" onchange="BioScanner.__updateProvider(this.value)" style="width:100%; padding:8px; border-radius:6px; background:#111; color:#fff; border:1px solid #444;">
+                            <option value="openai" ${__aiProvider === 'openai' ? 'selected' : ''}>OpenAI (GPT-4o Vision)</option>
+                            <option value="gemini" ${__aiProvider === 'gemini' ? 'selected' : ''}>Google Gemini 1.5</option>
+                            <option value="anthropic" ${__aiProvider === 'anthropic' ? 'selected' : ''}>Anthropic Claude 3</option>
+                        </select>
           </div>
 
           <div class="form-group">
@@ -157,8 +158,8 @@ const BioScanner = (() => {
         }
     }
 
-    function __updateProvider() {
-        __aiProvider = document.getElementById('bws-ai-provider').value;
+    function __updateProvider(val) {
+        __aiProvider = val;
     }
 
     async function __saveApiKey() {
@@ -304,10 +305,11 @@ const BioScanner = (() => {
 
         if (__apiKey) {
             try {
-                if (__aiProvider === 'gemini') await __callGemini();
+                if (__aiProvider === 'openai') await __callOpenAI();
+                else if (__aiProvider === 'gemini') await __callGemini();
                 else await __callAnthropic();
             } catch (err) {
-                console.error('[BioScanner] AI Error:', err);
+                console.error('[BioScanner] Cloud AI Error:', err);
                 __toast('⚠ Cloud AI Failed. Using Local AI.');
                 __displayResult(await __realLocalAI());
             }
@@ -616,7 +618,6 @@ const BioScanner = (() => {
 
     // ── Smart Vision Simulation (Fallback) ──────────────────────────────────
     function __smartSimulation() {
-        // (Existing logic kept as a backup)
         return {
             segregationScore: 50,
             overallGrade: 'Fair',
@@ -630,7 +631,48 @@ const BioScanner = (() => {
         };
     }
 
-    // ── AI Implementation ──────────────────────────────────────────────────────
+    // ── OpenAI GPT-4o Vision Integration ────────────────────────────────────
+    async function __callOpenAI() {
+        const prompt = `Act as a Bio-Energy and Composting Engineer. Analyze this waste image for Biogas suitability.
+        Return ONLY a JSON object with this exact structure:
+        {
+          "segregationScore": number (0-100),
+          "overallGrade": "Excellent" | "Good" | "Fair" | "Poor",
+          "gradeSummary": "string (Focus on Biogas/Compost potential)",
+          "detectedItems": [{"name": "string", "category": "Organic"|"Inorganic"|"Toxic", "isContaminant": boolean, "emoji": "string", "details": "C:N ratio | Moisture%"}],
+          "biogasSuitability": "Ideal" | "Acceptable" | "Reject",
+          "estimatedOrganicPercent": number,
+          "recommendations": [{"icon": "string", "text": "string"}],
+          "stats": {"g": number, "r": number, "b": number, "v": number}
+        }
+        Be very strict. If you see plastic, E-waste, or chemicals, the score must be below 40.`;
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${__apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                messages: [{
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${__imageB64}` } }
+                    ]
+                }],
+                response_format: { type: "json_object" }
+            })
+        });
+
+        const data = await response.json();
+        if (data.choices && data.choices[0]) {
+            __displayResult(JSON.parse(data.choices[0].message.content));
+        } else throw new Error('Invalid OpenAI Response');
+    }
+
+    // ── Google Gemini Integration ───────────────────────────────────────────
     const SYSTEM_PROMPT = 'Analyze this waste image. Return ONLY JSON: { "segregationScore": 0-100, "overallGrade": "Excellent|Good|Fair|Poor|Rejected", "gradeSummary": "...", "detectedItems": [{"name": "...", "category": "...", "isContaminant": bool, "emoji": "..."}], "biogasSuitability": "...", "estimatedOrganicPercent": 0-100, "actionRequired": bool }';
 
     async function __callGemini() {
