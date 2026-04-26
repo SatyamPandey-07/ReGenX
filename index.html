@@ -1,23 +1,137 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ReGenX Control Room</title>
-    <meta
-      name="description"
-      content="ReGenX is an AI-assisted bio-waste operations dashboard for pickup routing, plant balancing, and monetization."
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="./src/styles.css" />
-    <script type="module" src="./src/app.js"></script>
-  </head>
-  <body>
-    <div id="app"></div>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReGenX — Premium BioWaste Platform</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Leaflet (Map) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Custom Assets -->
+<link rel="stylesheet" href="./src/styles.css" />
+<script type="module" src="./src/app.js"></script>
+
+</head>
+<body>
+
+<!-- ════════ LOGIN / REGISTER ════════ -->
+<div id="login-screen">
+  <div class="glass-bg">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+  </div>
+  
+  <div class="login-box glass-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">🌿</div>ReGenX
+    </div>
+    <p class="login-tagline">Smart circular bio-waste logistics</p>
+    
+    <div class="login-tabs">
+      <button class="tab-btn active" id="tab-login" onclick="switchAuthTab('login')">Login</button>
+      <button class="tab-btn" id="tab-register" onclick="switchAuthTab('register')">Register</button>
+    </div>
+
+    <!-- REGISTER VIEW -->
+    <div id="view-register" class="auth-view hidden">
+      <div class="form-group">
+        <label class="form-label">I am a...</label>
+        <div class="role-grid">
+          <div class="role-btn" onclick="selectRole('provider')" id="role-provider">
+            <div class="role-btn-icon">🏨</div>
+            <div class="role-btn-name">Provider</div>
+          </div>
+          <div class="role-btn" onclick="selectRole('rider')" id="role-rider">
+            <div class="role-btn-icon">🚛</div>
+            <div class="role-btn-name">Rider</div>
+          </div>
+          <div class="role-btn" onclick="selectRole('plant')" id="role-plant">
+            <div class="role-btn-icon">⚗️</div>
+            <div class="role-btn-name">Plant</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" id="reg-name" type="text" placeholder="e.g. Alex Johnson">
+      </div>
+      <div class="form-group" id="reg-org-group">
+        <label class="form-label" id="reg-org-label">Organisation / Entity Name</label>
+        <input class="form-input" id="reg-org" type="text" placeholder="e.g. Omega Hostel">
+      </div>
+      <div class="form-group">
+        <label class="form-label">GPS Location</label>
+        <button class="btn btn-secondary btn-full" id="btn-detect-gps" onclick="detectGPS()">📍 Detect My Location</button>
+        <div id="gps-status" class="status-text muted" style="margin-top:6px; font-size:12px;">Waiting for location...</div>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-submit-reg" onclick="doRegister()" style="margin-top:10px;">Create Account</button>
+    </div>
+
+    <!-- LOGIN VIEW -->
+    <div id="view-login" class="auth-view">
+      <div class="form-group">
+        <label class="form-label">Select Registered Account</label>
+        <select class="form-input" id="login-account">
+          <option value="">-- No accounts registered yet --</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="doLogin()" style="margin-top:10px;">Enter Dashboard →</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════ APP SHELL ════════ -->
+<div id="app-shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="topbar-brand-dot"></div><span style="font-weight:700; font-family:'Space Grotesk'; font-size:20px; letter-spacing:-0.5px;">ReGenX</span>
+    </div>
+    <div class="sidebar-nav" id="sidebar-nav">
+      <!-- Injected by JS -->
+    </div>
+    <div class="sidebar-footer">
+      <button class="nav-item" id="theme-toggle" onclick="toggleTheme()">
+        <span class="nav-item-icon">🌗</span> Toggle Theme
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <main class="main-area">
+    <!-- Topbar -->
+    <header class="topbar glass-nav">
+      <div class="topbar-title" id="tb-view-title">Dashboard</div>
+      <div class="topbar-user">
+        <div style="text-align:right;">
+          <div class="topbar-name" id="tb-name">—</div>
+          <div class="topbar-role" id="tb-role">—</div>
+        </div>
+        <div class="topbar-avatar" id="tb-avatar"></div>
+        <button class="btn btn-ghost btn-sm" onclick="doLogout()">Logout</button>
+      </div>
+    </header>
+
+    <!-- Dynamic Content -->
+    <div class="content-wrapper" id="main-content">
+      <!-- Views injected here -->
+    </div>
+  </main>
+</div>
+
+<!-- Global Components -->
+<div id="toast"></div>
+<div class="modal-overlay" id="modal">
+  <div class="modal-box glass-card" id="modal-box"></div>
+</div>
+
+</body>
 </html>
