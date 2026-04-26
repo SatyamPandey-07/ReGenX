@@ -1,6 +1,6 @@
 # ReGenX Control Room
 
-ReGenX Control Room is a static single-page operations dashboard for smart bio-waste collection. It turns the implementation plan into a working web app with:
+ReGenX is a web page operations dashboard for smart bio-waste collection. It turns the implementation plan into a working web app with:
 
 - pickup request creation
 - AI-style route publishing for riders
