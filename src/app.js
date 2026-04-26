@@ -708,6 +708,16 @@ async function renderProvider(mc, fullRender) {
   if (currentView === 'v-pv-req') {
     if(fullRender) mc.innerHTML = `
       <div style="max-width:600px; margin:0 auto;">
+        <div class="glass-card" style="margin-bottom:16px; border-color:var(--green); background:var(--green-light); padding:20px; display:flex; align-items:center; gap:16px;">
+          <div style="font-size:32px;">🔬</div>
+          <div style="flex:1;">
+            <div style="font-weight:700; font-size:15px; color:var(--green-hover); margin-bottom:4px;">BioScan AI — Waste Verification</div>
+            <div style="font-size:13px; color:var(--green-hover); opacity:0.8;">Scan your waste with AI before dispatching. Auto-fills form fields.</div>
+          </div>
+          <button class="btn btn-primary" id="btn-open-scanner" onclick="openScanner()" style="white-space:nowrap; background:var(--green); border-color:var(--green);">
+            🔬 Scan Waste
+          </button>
+        </div>
         <div class="glass-card">
           <h3 class="heading" style="margin-bottom:24px;">New Dispatch Request</h3>
           <div class="form-group">

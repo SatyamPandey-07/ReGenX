@@ -4,6 +4,9 @@
 
 window.BioScanner = (function () {
 
+  // ── LOCAL API OBJECT (assigned to window.BioScanner at end) ─────────────────
+  const api = {};
+
   // ── CONFIG ──────────────────────────────────────────────────────────────────
 
   // MobileNet classes that map to ORGANIC / biogas-acceptable waste
@@ -542,7 +545,7 @@ window.BioScanner = (function () {
   }
 
   // ── CAPTURE FROM CAMERA ───────────────────────────────────────────────────────
-  window.BioScanner._captureFromCamera = async function () {
+  api._captureFromCamera = async function () {
     const video = document.getElementById('bio-video');
     if (!video || !video.srcObject) {
       // Fallback to file upload if no camera
@@ -564,7 +567,7 @@ window.BioScanner = (function () {
   };
 
   // ── FILE UPLOAD HANDLER ───────────────────────────────────────────────────────
-  window.BioScanner.handleFileUpload = async function (event) {
+  api.handleFileUpload = async function (event) {
     const file = event.target.files?.[0];
     if (!file) return;
     event.target.value = '';
@@ -604,13 +607,13 @@ window.BioScanner = (function () {
   }
 
   // ── PUBLIC API ────────────────────────────────────────────────────────────────
-  window.BioScanner._applyResult = function () {
+  api._applyResult = function () {
     if (_currentResult && _opts.onApply) {
       _opts.onApply(_currentResult.confidence, _currentResult.organicPercent);
     }
   };
 
-  window.BioScanner._rescan = function () {
+  api._rescan = function () {
     _currentResult = null;
     setUiState('idle');
     // Restart camera if needed
@@ -620,23 +623,23 @@ window.BioScanner = (function () {
     });
   };
 
-  window.BioScanner._back = function () {
-    stop();
+  api._back = function () {
+    stopCamera();
     if (_opts.onBack) _opts.onBack();
   };
 
   // ── PUBLIC OPEN ───────────────────────────────────────────────────────────────
-  window.BioScanner.open = function (opts) {
+  api.open = function (opts) {
     _opts = opts || {};
     _currentResult = null;
     renderScanner();
     setUiState('idle');
   };
 
-  window.BioScanner.stop = function () {
+  api.stop = function () {
     stopCamera();
   };
 
-  return window.BioScanner;
+  return api;
 
 })();
