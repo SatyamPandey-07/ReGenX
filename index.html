@@ -27,9 +27,13 @@
 <!-- Custom Assets -->
 <link rel="stylesheet" href="./src/styles.css?v=2" />
 <script type="module" src="./src/app.js?v=2"></script>
+<script src="./src/scanner.js?v=2"></script>
 
 </head>
 <body>
+
+<!-- Hidden input for scanner file upload -->
+<input type="file" id="file-input" accept="image/*" style="display:none;" onchange="BioScanner.handleFileUpload(event)">
 
 <!-- ════════ LOGIN / REGISTER ════════ -->
 <div id="login-screen">

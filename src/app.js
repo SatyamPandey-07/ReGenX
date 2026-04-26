@@ -734,136 +734,29 @@ async function renderProvider(mc, fullRender) {
 }
 
 window.openScanner = function() {
-  const html = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h3 class="modal-title" style="margin:0;">AI Waste Assessor</h3>
-      <div style="cursor:pointer; font-size:24px; color:var(--text-muted);" onclick="closeScanner()">×</div>
-    </div>
-    <p class="modal-sub">Scanning material via camera feed...</p>
-    <div class="scanner-viewport scanner-corners">
-      <video id="camera-feed" autoplay playsinline style="width:100%; height:100%; object-fit:cover;"></video>
-      <div class="laser-line"></div>
-      <div id="ai-status" style="position:absolute; top:12px; left:12px; background:rgba(0,0,0,0.7); color:#0f0; padding:4px 8px; font-size:10px; border-radius:4px; font-family:monospace;">> AI INITIALIZING...</div>
-    </div>
-    
-    <div id="scanner-result" style="display:none; background:var(--green-light); padding:16px; border-radius:12px; margin-bottom:16px; border:1px solid var(--green);">
-       <div style="font-weight:700; color:var(--green-hover); margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-          <div style="width:10px; height:10px; background:var(--green); border-radius:50%; animation: pulse 1s infinite;"></div>
-          ✓ IoT SENSORY ANALYSIS READY
-       </div>
-       
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Object Recognized:</span> <strong id="scan-object">Waste Detected</strong></div>
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Material Type:</span> <strong id="scan-type">--</strong></div>
-       <div class="between" style="font-size:13px; margin-bottom:8px;"><span class="muted">Bio-Suitability Index:</span> <strong id="scan-suitability" style="color:var(--green)">--</strong></div>
-       
-       <div style="width:100%; height:8px; background:rgba(0,0,0,0.1); border-radius:4px; margin-bottom:12px; overflow:hidden;">
-          <div id="suitability-bar" style="width:0%; height:100%; background:var(--green); transition:width 1.5s ease-out;"></div>
-       </div>
-
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">Contamination Index:</span> <strong id="scan-contam" style="color:var(--red)">--</strong></div>
-       <div style="font-size:11px; color:var(--text-muted); margin-bottom:12px; background:rgba(255,255,255,0.5); padding:8px; border-radius:6px; font-family:monospace;" id="contam-breakdown">
-          Analysis: Plastic (0%), Inorganic (0%), Chemical (0%)
-       </div>
-       
-       <div class="between" style="font-size:13px; margin-bottom:4px;"><span class="muted">IoT Est. Weight:</span> <strong id="scan-weight">--</strong></div>
-       <div style="margin-top:12px; padding:12px; background:white; border-radius:8px; border:1px solid rgba(0,0,0,0.1); font-size:12px;">
-          <strong>AI IoT LOGIC:</strong> <span id="scan-recom">Analyzing...</span>
-       </div>
-    </div>
-    <div class="modal-actions" style="justify-content:space-between;">
-      <button class="btn btn-ghost" onclick="closeScanner()">Cancel</button>
-      <button class="btn btn-primary" id="btn-scan-action" disabled>Running IoT Analysis...</button>
-    </div>
-  `;
-  document.getElementById('modal-box').innerHTML = html;
+  BioScanner.open({
+    containerId: 'modal-box',
+    role: SESSION.role,
+    userName: SESSION.name,
+    userOrg: SESSION.org,
+    userId: SESSION.id,
+    onBack: () => closeModal(),
+    onApply: (score, organicPercent) => {
+      showView('v-pv-req');
+      setTimeout(() => {
+        const rKg = document.getElementById('req-kg'); if(rKg) rKg.value = Math.floor(Math.random() * 150 + 50); 
+        const rType = document.getElementById('req-type'); if(rType) rType.value = organicPercent > 70 ? "Food Waste" : "Dry Waste";
+        showToast(`✓ Scanner Data Applied: ${score}% Segregation Score`);
+      }, 200);
+    },
+    onScanSaved: (record) => {
+      console.log('IoT Scan Saved:', record);
+    }
+  });
   document.getElementById('modal').classList.add('open');
-  
-  const status = document.getElementById('ai-status');
-  setTimeout(() => { if(status) status.innerText = "> OBJECT RECOGNITION ACTIVE..."; }, 1000);
-  setTimeout(() => { if(status) status.innerText = "> SENSING MATERIAL DENSITY..."; }, 2500);
-  
-  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-    .then(stream => {
-      window.currentStream = stream;
-      const feed = document.getElementById('camera-feed');
-      if(feed) feed.srcObject = stream;
-    }).catch(err => {
-      console.warn("Camera access denied or unavailable", err);
-      window.showToast("⚠ Camera access denied. Using simulated feed.");
-    });
-  }
-
-  setTimeout(() => {
-    if(status) status.innerText = "> DATA ACQUIRED. PROCESSING...";
-    
-    // Simulate "Invalid Object" detection if scanning a person (funny but smart logic)
-    const isInvalid = Math.random() < 0.1; // 10% chance to fail if it "detects" a non-waste object
-    
-    if (isInvalid) {
-      const obj = document.getElementById('scan-object');
-      if(obj) {
-        obj.textContent = "NON-WASTE OBJECT";
-        obj.style.color = "var(--red)";
-      }
-      const rec = document.getElementById('scan-recom');
-      if(rec) rec.innerHTML = `<b style="color:var(--red)">⚠ INVALID OBJECT</b>. AI has detected a non-waste entity (possibly human). Please re-aim at biowaste.`;
-      
-      const res = document.getElementById('scanner-result');
-      if(res) res.style.display = 'block';
-      
-      const btn = document.getElementById('btn-scan-action');
-      if(btn) {
-        btn.textContent = "Retry Scan";
-        btn.disabled = false;
-        btn.onclick = () => { closeScanner(); openScanner(); };
-      }
-      return;
-    }
-
-    const isOrganic = Math.random() > 0.3;
-    const type = isOrganic ? "Organic (Food/Green Waste)" : "Recyclable (Paper/Plastic)";
-    const suitScore = isOrganic ? Math.floor(Math.random() * 20 + 80) : Math.floor(Math.random() * 20);
-    const contamVal = Math.floor(Math.random() * 8) + 1;
-    const randKg = Math.floor(Math.random() * (250 - 50 + 1)) + 50;
-    
-    const sType = document.getElementById('scan-type'); if(sType) sType.textContent = type;
-    const sSuit = document.getElementById('scan-suitability'); if(sSuit) sSuit.textContent = `${suitScore}% (${suitScore > 75 ? 'IDEAL' : 'UNSUITABLE'})`;
-    const sBar = document.getElementById('suitability-bar'); if(sBar) { sBar.style.width = suitScore + "%"; sBar.style.background = suitScore > 75 ? 'var(--green)' : 'var(--red)'; }
-    
-    const sContam = document.getElementById('scan-contam'); if(sContam) sContam.textContent = `${contamVal}% (Exact)`;
-    const sBreak = document.getElementById('contam-breakdown'); if(sBreak) sBreak.textContent = isOrganic 
-      ? `Analysis: Plastic (${(contamVal*0.6).toFixed(1)}%), Inorganic (${(contamVal*0.3).toFixed(1)}%), Chemical (${(contamVal*0.1).toFixed(1)}%)`
-      : `Analysis: Organic (${(contamVal*0.8).toFixed(1)}%), Moisture (${(contamVal*0.2).toFixed(1)}%)`;
-      
-    const sWeight = document.getElementById('scan-weight'); if(sWeight) sWeight.textContent = randKg + " kg";
-    const sRecom = document.getElementById('scan-recom'); if(sRecom) sRecom.innerHTML = suitScore > 75 
-      ? `<b style="color:var(--green)">✓ IDEAL FOR BIOGAS</b>. Methane yield prediction: High.` 
-      : `<b style="color:var(--red)">⚠ NOT IDEAL</b>. Divert to Recovery Center to avoid digester contamination.`;
-    
-    const res = document.getElementById('scanner-result'); if(res) res.style.display = 'block';
-    
-    const btn = document.getElementById('btn-scan-action');
-    if(btn) {
-      btn.disabled = false;
-      btn.textContent = "✓ USE DATA & DISPATCH";
-      btn.onclick = () => { 
-        closeScanner(); 
-        showView('v-pv-req'); 
-        setTimeout(()=> { 
-          const rKg = document.getElementById('req-kg'); if(rKg) rKg.value = randKg; 
-          const rType = document.getElementById('req-type'); if(rType) rType.value = isOrganic ? "Food Waste" : "Dry Waste";
-        }, 100); 
-      };
-    }
-  }, 4500);
 }
 
 window.closeScanner = function() {
-  if(window.currentStream) {
-    window.currentStream.getTracks().forEach(t => t.stop());
-    window.currentStream = null;
-  }
   closeModal();
 }
 
