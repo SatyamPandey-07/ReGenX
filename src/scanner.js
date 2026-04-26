@@ -245,15 +245,22 @@ const BioScanner = (() => {
     r /= count; g /= count; b /= count;
     brightness = (r + g + b) / 3;
 
-    // ── THE VISUAL HEURISTIC ENGINE ──
-    // This analyzes real-time pixel data to simulate an IoT sensor.
-    // For Production: Replace this with a Cloud AI (Gemini/Claude Vision) API call.
+    // ── THE VISUAL HEURISTIC ENGINE 2.0 ──
     const greenRatio = g / (r + 1); 
     const isBright = brightness > 190; 
     
-    // Strict Skin-Tone detection (R > G > B profile)
-    const isSkinLike = (r > 90 && g > 60 && b > 40 && r > g && g > b && (r - g) > 15 && (r - b) > 30);
-    // Neutral background detection (White/Grey walls)
+    // 1. Strict Skin-Tone detection
+    const isSkinLike = (r > 100 && g > 70 && b > 50 && r > g && g > b && (r - g) > 15 && (r - b) > 30);
+    
+    // 2. High-Contrast / Text Detection (Calculates edge density)
+    let edgeDensity = 0;
+    for (let i = 0; i < imgData.length - 40; i += 40) {
+      const diff = Math.abs(imgData[i] - imgData[i+40]); // Brightness diff between neighbors
+      if (diff > 50) edgeDensity++; // Sharp edge detected
+    }
+    const isTextLike = edgeDensity > (count * 0.15); // Too many sharp edges = likely text/docs
+    
+    // 3. Neutral background detection (White/Grey walls)
     const isTooNeutral = Math.abs(r-g) < 8 && Math.abs(g-b) < 8 && Math.abs(r-b) < 8;
     
     let score = 55; 
@@ -262,11 +269,16 @@ const BioScanner = (() => {
     if (isBright) score -= 35; 
     if (brightness < 50) score -= 15; 
     
+    let invalidReason = null;
+    if (isSkinLike) invalidReason = "HUMAN_DETECTED";
+    if (isTextLike) invalidReason = "TEXT_DETECTED";
+    if (isTooNeutral && brightness > 120) invalidReason = "BLANK_DETECTED";
+
     return {
       score: Math.max(10, Math.min(100, Math.floor(score))),
       isGreen: greenRatio > 1.1,
       isBright: isBright,
-      isInvalid: isSkinLike || (isTooNeutral && brightness > 120)
+      invalidReason: invalidReason
     };
   }
 
@@ -301,8 +313,8 @@ const BioScanner = (() => {
     setTimeout(async () => {
       clearInterval(stepInt);
       
-      if (visualData.isInvalid) {
-        _displayInvalidResult();
+      if (visualData.invalidReason) {
+        _displayInvalidResult(visualData.invalidReason);
         return;
       }
 
@@ -393,19 +405,33 @@ const BioScanner = (() => {
     </div>`;
   }
 
-  function _displayInvalidResult() {
+  function _displayInvalidResult(reason) {
     const resultArea = document.getElementById('bws-result');
+    let title = "INVALID SCAN", msg = "Non-waste object detected.", icon = "⚠️";
+    
+    if (reason === "HUMAN_DETECTED") {
+      title = "HUMAN DETECTED";
+      msg = "The AI has detected human skin tones. Biogas tokens are only awarded for organic waste, not people!";
+      icon = "👤";
+    } else if (reason === "TEXT_DETECTED") {
+      title = "DOCUMENT DETECTED";
+      msg = "High-contrast text or patterns detected. Please point the scanner at actual waste material, not documents or screens.";
+      icon = "📄";
+    } else if (reason === "BLANK_DETECTED") {
+      title = "NOTHING DETECTED";
+      msg = "The scanner sees a blank or neutral surface. Please point it at a bin or pile of waste.";
+      icon = "⬜";
+    }
+
     resultArea.innerHTML = `
     <div class="result-panel" style="margin-top:20px; border:2px solid var(--red);">
       <div class="result-header" style="background:var(--red); padding:20px; color:white; text-align:center;">
-        <div style="font-size:28px; font-weight:800;">INVALID SCAN</div>
-        <div style="font-size:12px; text-transform:uppercase; letter-spacing:1px;">Non-Waste Object Detected</div>
+        <div style="font-size:24px; font-weight:800; letter-spacing:1px;">${title}</div>
       </div>
       <div class="result-body" style="padding:24px; text-align:center;">
-        <div style="font-size:48px; margin-bottom:16px;">👤</div>
+        <div style="font-size:48px; margin-bottom:16px;">${icon}</div>
         <p style="font-size:14px; color:var(--text-muted); line-height:1.6; margin-bottom:20px;">
-          The AI has detected a <b>Non-Waste entity</b> (possibly a human, skin-tone, or a blank background).<br><br>
-          Please re-aim the camera at the biowaste bin or pile to get an accurate segregation report.
+          ${msg}
         </p>
         <button class="cam-btn cam-btn-upload" style="width:100%; justify-content:center;" onclick="BioScanner._retake()">🔄 Retry Scan</button>
       </div>
