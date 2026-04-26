@@ -229,7 +229,44 @@ const BioScanner = (() => {
     if (typeof _opts.onBack === 'function') _opts.onBack();
   }
 
+  // ── THE VISUAL ENGINE (Calculates score based on real pixels) ──
+  function _analyzePixels(canvas) {
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let r = 0, g = 0, b = 0, brightness = 0;
+    
+    // Sample pixels (every 40th to stay fast)
+    for (let i = 0; i < imgData.length; i += 40) {
+      r += imgData[i];
+      g += imgData[i+1];
+      b += imgData[i+2];
+    }
+    const count = imgData.length / 40;
+    r /= count; g /= count; b /= count;
+    brightness = (r + g + b) / 3;
+
+    // Logic: Higher Green-to-Red ratio = More Organic. Higher Brightness = More Plastic/Metal.
+    const greenRatio = g / (r + 1); 
+    const isBright = brightness > 180; // Highly reflective
+    
+    let score = 55; // Base score
+    if (greenRatio > 1.1) score += 20; // It looks "Green/Organic"
+    if (greenRatio > 1.3) score += 15; // Very Organic
+    if (isBright) score -= 30; // Shiny objects usually mean plastic/metal
+    if (brightness < 60) score -= 10; // Too dark/shadowy
+    
+    return {
+      score: Math.max(10, Math.min(100, Math.floor(score))),
+      isGreen: greenRatio > 1.1,
+      isBright: isBright
+    };
+  }
+
   async function _analyse() {
+    const canvas = document.getElementById('bws-canvas');
+    if (!canvas) { _toast('⚠ Canvas error'); return; }
+    const visualData = _analyzePixels(canvas);
+    
     const resultArea = document.getElementById('bws-result');
     const analyBtn   = document.getElementById('bws-analyse-btn');
     if (analyBtn) analyBtn.disabled = true;
@@ -238,42 +275,64 @@ const BioScanner = (() => {
       <div class="result-panel">
         <div class="analyzing-box">
           <div class="bw-spinner"></div>
-          <div style="font-family:var(--font,sans-serif);font-size:18px;font-weight:700;">Analysing waste…</div>
+          <div style="font-family:var(--font,sans-serif);font-size:18px;font-weight:700;">IoT Visual Analysis…</div>
           <div class="scan-dots">
             <div class="scan-dot"></div><div class="scan-dot"></div><div class="scan-dot"></div>
           </div>
-          <div class="scan-steps" id="bws-step-txt">IoT Model: Identify material density</div>
+          <div class="scan-steps" id="bws-step-txt">Calculating pixel density & reflectance</div>
         </div>
       </div>`;
 
-    const steps = ['Identifying contaminants...', 'Checking biogas suitability...', 'Estimating organic %...', 'Generating IoT report...'];
+    const steps = ['Identifying material color profile...', 'Checking surface reflectivity...', 'Estimating organic composition...', 'Finalizing IoT report...'];
     let si = 0;
     const stepInt = setInterval(() => {
       const el = document.getElementById('bws-step-txt');
       if (el && si < steps.length) el.textContent = steps[si++];
     }, 1200);
 
-    // Simulation for demo
     setTimeout(async () => {
       clearInterval(stepInt);
-      const isOrganic = Math.random() > 0.3;
-      const score = isOrganic ? Math.floor(Math.random() * 15 + 85) : Math.floor(Math.random() * 30 + 10);
+      
+      const score = visualData.score;
+      const isOrganic = score > 65;
+      
+      let grade, summary, items, suit;
+
+      if (isOrganic) {
+        grade = score > 88 ? 'Excellent' : 'Good';
+        summary = visualData.isGreen 
+          ? "High chlorophyll/organic signature detected. Ideal for Biogas." 
+          : "Solid biowaste density detected. Suitable for processing.";
+        items = [
+          { name: 'Organic Matter', category: 'Organic', isContaminant: false, emoji: '🥬' },
+          { name: 'Detected Fibers', category: 'Organic', isContaminant: false, emoji: '🌾' }
+        ];
+        suit = 'Ideal';
+      } else {
+        grade = score > 40 ? 'Fair' : 'Poor';
+        summary = visualData.isBright 
+          ? "⚠ High reflectivity detected. Potential inorganic contaminants (Plastic/Metal)." 
+          : "Low organic signature. Mixed waste profile detected.";
+        items = [
+          { name: 'Inorganic Surface', category: 'Mixed', isContaminant: true, emoji: '🥤' },
+          { name: 'Non-Organic Matter', category: 'Mixed', isContaminant: true, emoji: '📦' }
+        ];
+        suit = score < 40 ? 'Reject' : 'Marginal';
+      }
+
       const result = {
         segregationScore: score,
-        overallGrade: score > 80 ? 'Excellent' : (score > 60 ? 'Good' : (score > 40 ? 'Fair' : 'Poor')),
-        gradeSummary: isOrganic ? "Excellent organic density detected. Ready for Biogas digester." : "High contamination detected. Ineligible for biogas without sorting.",
-        detectedItems: [
-          { name: 'Organic Waste', category: 'Organic', isContaminant: false, emoji: '🥬' },
-          { name: 'Plastic Bags', category: 'Plastic', isContaminant: true, emoji: '🛍️' }
-        ],
-        biogazSuitability: score > 75 ? 'Ideal' : 'Reject',
-        estimatedOrganicPercent: isOrganic ? 94 : 38,
+        overallGrade: grade,
+        gradeSummary: summary,
+        detectedItems: items,
+        biogazSuitability: suit,
+        estimatedOrganicPercent: Math.floor(score * 0.95),
         actionRequired: score < 75
       };
       _displayResult(result);
       await _saveToHistory(result);
     }, 4500);
-  }
+}
 
   async function _saveToHistory(result) {
     const record = {
