@@ -592,6 +592,13 @@ async function renderProvider(mc, fullRender) {
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
 
+          <!-- IoT Bin Status Widget -->
+          <div class="between" style="margin-top:24px; margin-bottom:16px;">
+            <h3 class="heading" style="margin-bottom:0;">🗑️ IoT Bin Status</h3>
+            <button class="btn btn-ghost btn-sm" onclick="showView('v-iot-bins')">View All →</button>
+          </div>
+          <div id="pv-iot-widget" class="glass-card" style="padding:16px;"></div>
+
           <h3 class="heading" style="margin-top:24px; margin-bottom:16px;">Impact Analytics</h3>
           <div class="glass-card" style="padding:16px;">
             <div class="between" style="margin-bottom:12px;">
@@ -664,10 +671,16 @@ async function renderProvider(mc, fullRender) {
     const totalKg = completed.reduce((s,o)=>s+(o.actualKg||o.kg),0);
     const statsDiv = document.getElementById('pv-stats');
     if(statsDiv) {
+      const bins = getIoTBins();
+      const critCount = bins.filter(b => b.fill >= 85).length;
       statsDiv.innerHTML = `
         <div class="stat-card"><div class="stat-val">${orders.length}</div><div class="stat-lbl">Total Requests</div></div>
         <div class="stat-card"><div class="stat-val">${totalKg}</div><div class="stat-lbl">Kg Recycled</div></div>
         <div class="stat-card"><div class="stat-val">${Math.round(totalKg*0.62)}</div><div class="stat-lbl">CO₂ Offset (kg)</div></div>
+        <div class="stat-card" style="border-top-color:${critCount > 0 ? 'var(--red)' : 'var(--green)'};cursor:pointer;" onclick="showView('v-iot-bins')">
+          <div class="stat-val" style="color:${critCount > 0 ? 'var(--red)' : 'var(--green)'}">${critCount}</div>
+          <div class="stat-lbl">Bins Critical</div>
+        </div>
       `;
     }
     const pvMyKg = document.getElementById('pv-my-kg');
@@ -676,6 +689,38 @@ async function renderProvider(mc, fullRender) {
     if(pvActDiv) pvActDiv.innerHTML = active.length ? active.map(o=>buildOrderCard(o,'provider')).join('') : '<div class="empty-state"><div class="empty-sub">No active dispatches.</div></div>';
 
     if(fullRender) setTimeout(initPvChart, 100);
+
+    // Render IoT Bin mini-widget
+    const iotWidget = document.getElementById('pv-iot-widget');
+    if (iotWidget) {
+      const bins = getIoTBins();
+      if (!bins.length) {
+        iotWidget.innerHTML = '<div style="font-size:13px;color:var(--text-muted);text-align:center;padding:12px;">No bins registered. <button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')">Add one →</button></div>';
+      } else {
+        iotWidget.innerHTML = bins.map(b => {
+          const col = b.fill >= 85 ? 'var(--red)' : b.fill >= 60 ? 'var(--amber)' : 'var(--green)';
+          const badge = b.fill >= 85 ? `<span class="badge badge-red" style="font-size:10px;">⚠ Critical</span>`
+            : b.fill >= 60 ? `<span class="badge badge-amber" style="font-size:10px;">◑ Filling</span>`
+            : `<span class="badge badge-green" style="font-size:10px;">✓ OK</span>`;
+          return `
+            <div style="margin-bottom:14px;">
+              <div class="between" style="margin-bottom:5px;">
+                <div style="font-size:13px;font-weight:600;">${b.name}</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  ${badge}
+                  <span style="font-size:13px;font-weight:700;color:${col};">${b.fill}%</span>
+                  ${b.fill >= 85 ? `<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px;" onclick="iotDispatchFromBin('${b.id}')">🚀 Dispatch</button>` : ''}
+                </div>
+              </div>
+              <div style="height:8px;background:var(--border);border-radius:999px;overflow:hidden;">
+                <div style="height:100%;width:${b.fill}%;background:${col};border-radius:999px;transition:width 0.8s;"></div>
+              </div>
+            </div>`;
+        }).join('') + `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;" onclick="showView('v-iot-bins')">Manage All Bins →</button>`;
+      }
+      syncIoTAlertBadge();
+      startIoTSim();
+    }
   }
   
   if (currentView === 'v-pv-req') {
