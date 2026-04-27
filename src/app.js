@@ -379,6 +379,7 @@ function buildSidebar() {
     nav.innerHTML = `
       <button class="nav-item active" onclick="showView('v-pv-dash')" id="nav-v-pv-dash"><span class="nav-item-icon">📊</span> Overview</button>
       <button class="nav-item" onclick="showView('v-pv-req')" id="nav-v-pv-req"><span class="nav-item-icon">➕</span> Dispatch Request</button>
+      <button class="nav-item" onclick="showView('v-iot-bins')" id="nav-v-iot-bins"><span class="nav-item-icon">🗑️</span> IoT Sensory Bins <span class="nav-badge" id="iot-alert-badge" style="display:none">!</span></button>
       <button class="nav-item" onclick="showView('v-pv-hist-week')" id="nav-v-pv-hist-week"><span class="nav-item-icon">📅</span> Weekly Records</button>
       <button class="nav-item" onclick="showView('v-pv-hist-month')" id="nav-v-pv-hist-month"><span class="nav-item-icon">🗓️</span> Monthly Records</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
@@ -410,7 +411,8 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  if(btn) document.getElementById('tb-view-title').textContent = btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins' };
+  if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
   refreshCurrentView(true);
@@ -561,6 +563,7 @@ async function refreshCurrentView(fullRender = false) {
     `;
     return;
   }
+  if (currentView === 'v-iot-bins') { renderIoT(mc, fullRender); return; }
   if (SESSION.role === 'provider') await renderProvider(mc, fullRender);
   if (SESSION.role === 'rider') await renderRider(mc, fullRender);
   if (SESSION.role === 'plant') await renderPlant(mc, fullRender);
@@ -1313,13 +1316,310 @@ function initPlChart() {
   });
 }
 
+// ════════ IoT SENSORY BIN LOGIC ════════
+
+// ── IoT helpers ──
+function getIoTBins() { return DB.get('iot-bins') || []; }
+function saveIoTBins(bins) { DB.set('iot-bins', bins); }
+
+function iotFillColor(fill) {
+  if (fill >= 85) return 'var(--red)';
+  if (fill >= 60) return 'var(--amber)';
+  return 'var(--green)';
+}
+
+function iotStatusBadge(bin) {
+  if (bin.fill >= 85) return '<span class="badge badge-red">⚠ Critical</span>';
+  if (bin.fill >= 60) return '<span class="badge badge-amber">◑ Filling</span>';
+  if (bin.status === 'offline') return '<span class="badge" style="background:var(--border);color:var(--text-muted)">● Offline</span>';
+  return '<span class="badge badge-green">✓ Normal</span>';
+}
+
+function iotAlertCount() {
+  return getIoTBins().filter(b => b.fill >= 85 || b.status === 'offline').length;
+}
+
+function syncIoTAlertBadge() {
+  const badge = document.getElementById('iot-alert-badge');
+  if (!badge) return;
+  const n = iotAlertCount();
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n;
+}
+
+// ── IoT Simulation Engine (single shared interval) ──
+let _iotSimTimer = null;
+function startIoTSim() {
+  if (_iotSimTimer) return; // already running
+  _iotSimTimer = setInterval(() => {
+    const bins = getIoTBins();
+    let changed = false;
+    bins.forEach(b => {
+      if (b.status === 'offline') return;
+      // Advance fill by rate ± small noise, clamp 0-100
+      const delta = (b.rate || 0.5) + (Math.random() - 0.4) * 0.3;
+      b.fill = Math.min(100, Math.max(0, parseFloat((b.fill + delta).toFixed(1))));
+      b.lastReading = Date.now();
+      // Simulate occasional temp/humidity changes
+      b.temp = parseFloat((22 + Math.random() * 8).toFixed(1));
+      b.humidity = parseFloat((55 + Math.random() * 20).toFixed(1));
+      b.methane = parseFloat((Math.random() * 5).toFixed(2));
+      changed = true;
+    });
+    if (changed) {
+      saveIoTBins(bins);
+      syncIoTAlertBadge();
+      // If user is watching the IoT view, refresh the fill bars without full re-render
+      if (currentView === 'v-iot-bins') iotLiveUpdate(bins);
+    }
+  }, 8000); // tick every 8 s
+}
+
+function stopIoTSim() {
+  clearInterval(_iotSimTimer);
+  _iotSimTimer = null;
+}
+
+// Lightweight DOM-only update (no full re-render)
+function iotLiveUpdate(bins) {
+  bins.forEach(b => {
+    const fillEl = document.getElementById(`iot-fill-${b.id}`);
+    const pctEl  = document.getElementById(`iot-pct-${b.id}`);
+    const badgeEl = document.getElementById(`iot-badge-${b.id}`);
+    const tempEl = document.getElementById(`iot-temp-${b.id}`);
+    const humEl  = document.getElementById(`iot-hum-${b.id}`);
+    const ch4El  = document.getElementById(`iot-ch4-${b.id}`);
+    if (fillEl) { fillEl.style.width = b.fill + '%'; fillEl.style.background = iotFillColor(b.fill); }
+    if (pctEl)  pctEl.textContent = b.fill + '%';
+    if (badgeEl) badgeEl.outerHTML = `<span id="iot-badge-${b.id}">${iotStatusBadge(b)}</span>`;
+    if (tempEl)  tempEl.textContent = (b.temp || '--') + '°C';
+    if (humEl)   humEl.textContent  = (b.humidity || '--') + '%';
+    if (ch4El)   ch4El.textContent  = (b.methane || '--') + ' ppm';
+  });
+}
+
+// ── IoT Bin Card Builder ──
+function buildBinCard(b) {
+  const col = iotFillColor(b.fill);
+  const lastSeen = b.lastReading ? fmtDate(b.lastReading) : 'Never';
+  return `
+  <div class="iot-bin-card glass-card" id="iot-card-${b.id}">
+    <div class="iot-card-header">
+      <div>
+        <div class="iot-bin-name">🗑️ ${b.name}</div>
+        <div class="iot-bin-sub">ID: ${b.id} · Last ping: ${lastSeen}</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span id="iot-badge-${b.id}">${iotStatusBadge(b)}</span>
+        <button class="btn btn-ghost btn-sm" onclick="iotEditBin('${b.id}')" title="Edit">✏️</button>
+        <button class="btn btn-outline-danger btn-sm" onclick="iotDeleteBin('${b.id}')" title="Delete">🗑</button>
+      </div>
+    </div>
+
+    <!-- Fill level bar -->
+    <div class="iot-fill-row">
+      <div class="iot-fill-label">Fill Level</div>
+      <div class="iot-fill-pct" id="iot-pct-${b.id}">${b.fill}%</div>
+    </div>
+    <div class="iot-fill-track">
+      <div class="iot-fill-bar" id="iot-fill-${b.id}" style="width:${b.fill}%; background:${col};"></div>
+    </div>
+
+    <!-- Sensor readings -->
+    <div class="iot-sensor-grid">
+      <div class="iot-sensor-item">
+        <div class="iot-sensor-icon">🌡️</div>
+        <div class="iot-sensor-val" id="iot-temp-${b.id}">${b.temp ? b.temp + '°C' : '--'}</div>
+        <div class="iot-sensor-lbl">Temp</div>
+      </div>
+      <div class="iot-sensor-item">
+        <div class="iot-sensor-icon">💧</div>
+        <div class="iot-sensor-val" id="iot-hum-${b.id}">${b.humidity ? b.humidity + '%' : '--'}</div>
+        <div class="iot-sensor-lbl">Humidity</div>
+      </div>
+      <div class="iot-sensor-item">
+        <div class="iot-sensor-icon">🧪</div>
+        <div class="iot-sensor-val" id="iot-ch4-${b.id}">${b.methane != null ? b.methane + ' ppm' : '--'}</div>
+        <div class="iot-sensor-lbl">CH₄</div>
+      </div>
+      <div class="iot-sensor-item">
+        <div class="iot-sensor-icon">📈</div>
+        <div class="iot-sensor-val">${b.rate} kg/h</div>
+        <div class="iot-sensor-lbl">Fill Rate</div>
+      </div>
+    </div>
+
+    ${b.fill >= 85 ? `
+    <div class="iot-alert-banner">
+      ⚠️ <strong>Bin is critically full!</strong> Dispatch a collection immediately to prevent overflow.
+      <button class="btn btn-primary btn-sm" style="margin-left:8px;" onclick="iotDispatchFromBin('${b.id}')">🚀 Dispatch Now</button>
+    </div>` : ''}
+  </div>`;
+}
+
+// ── IoT View Renderer ──
+function renderIoT(mc, fullRender) {
+  const bins = getIoTBins();
+  syncIoTAlertBadge();
+  startIoTSim(); // ensure sim is running
+
+  if (!fullRender) { iotLiveUpdate(bins); return; }
+
+  const alerts = bins.filter(b => b.fill >= 85 || b.status === 'offline');
+
+  mc.innerHTML = `
+    <!-- Header row -->
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">IoT Sensory Bin Network</h3>
+        <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">
+          Real-time fill monitoring · ${bins.length} bin${bins.length !== 1 ? 's' : ''} connected
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-add-iot-bin" onclick="iotAddBin()">＋ Add Bin</button>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="stats-grid" style="margin-bottom:28px;">
+      <div class="stat-card">
+        <div class="stat-val">${bins.length}</div>
+        <div class="stat-lbl">Total Bins</div>
+      </div>
+      <div class="stat-card" style="border-top-color:var(--red);">
+        <div class="stat-val" style="color:var(--red);">${bins.filter(b => b.fill >= 85).length}</div>
+        <div class="stat-lbl">Critical (≥85%)</div>
+      </div>
+      <div class="stat-card" style="border-top-color:var(--amber);">
+        <div class="stat-val" style="color:var(--amber);">${bins.filter(b => b.fill >= 60 && b.fill < 85).length}</div>
+        <div class="stat-lbl">Filling (60–84%)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">${Math.round(bins.reduce((s,b) => s + b.fill, 0) / Math.max(bins.length, 1))}%</div>
+        <div class="stat-lbl">Avg Fill Level</div>
+      </div>
+    </div>
+
+    <!-- Alert Banner (if any critical bins) -->
+    ${alerts.length ? `
+    <div class="iot-global-alert glass-card" style="margin-bottom:24px; border-color:var(--red); background:var(--red-light); padding:16px;">
+      <div style="font-weight:700; color:var(--red); margin-bottom:4px;">⚠️ ${alerts.length} bin${alerts.length > 1 ? 's require' : ' requires'} immediate attention</div>
+      <div style="font-size:13px; color:var(--text-muted);">${alerts.map(b => b.name).join(', ')}</div>
+    </div>` : ''}
+
+    <!-- Bin Cards Grid -->
+    <div class="iot-bins-grid" id="iot-bins-grid">
+      ${bins.length ? bins.map(buildBinCard).join('') : `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <div class="empty-icon">🗑️</div>
+          <div class="empty-title">No bins connected</div>
+          <div class="empty-sub">Click <strong>+ Add Bin</strong> to register your first IoT sensory bin.</div>
+        </div>`}
+    </div>
+
+    <!-- Network telemetry footer -->
+    <div class="glass-card sensor-card" style="margin-top:28px; padding:20px;">
+      <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:16px;">🛰️ Network Telemetry</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px;">
+        <div><div style="font-size:11px;color:var(--text-muted);">SIGNAL HEALTH</div><div style="font-weight:700;color:var(--green);">98.4% Uptime</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">DATA LATENCY</div><div style="font-weight:700;color:var(--blue);">~120 ms</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">SIM TICK</div><div style="font-weight:700;">8 s interval</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">PROTOCOL</div><div style="font-weight:700;">MQTT / LoRaWAN</div></div>
+      </div>
+    </div>
+  `;
+}
+
+// ── IoT CRUD Actions ──
+window.iotAddBin = function() {
+  const html = `
+    <h3 class="modal-title">Add IoT Sensory Bin</h3>
+    <p class="modal-sub">Register a new bin to the network.</p>
+    <div class="form-group"><label class="form-label">Bin Name / Location</label><input class="form-input" id="iot-m-name" placeholder="e.g. East Wing Organic Hub"></div>
+    <div class="form-group"><label class="form-label">Initial Fill Level (%)</label><input class="form-input" type="number" id="iot-m-fill" value="0" min="0" max="100"></div>
+    <div class="form-group"><label class="form-label">Fill Rate (kg/h)</label><input class="form-input" type="number" id="iot-m-rate" value="0.8" step="0.1" min="0.1"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="iotSaveNewBin()">Add Bin ✓</button>
+    </div>`;
+  document.getElementById('modal-box').innerHTML = html;
+  document.getElementById('modal').classList.add('open');
+};
+
+window.iotSaveNewBin = function() {
+  const name = document.getElementById('iot-m-name').value.trim();
+  const fill = parseFloat(document.getElementById('iot-m-fill').value) || 0;
+  const rate = parseFloat(document.getElementById('iot-m-rate').value) || 0.8;
+  if (!name) return showToast('⚠ Enter a bin name.');
+  const bins = getIoTBins();
+  bins.push({ id: 'bin-' + uid(), name, fill, rate, status: 'active', lastReading: Date.now(), temp: 24, humidity: 60, methane: 0 });
+  saveIoTBins(bins);
+  closeModal();
+  showToast('✓ Bin added to network.');
+  refreshCurrentView(true);
+};
+
+window.iotEditBin = function(id) {
+  const bins = getIoTBins();
+  const b = bins.find(x => x.id === id);
+  if (!b) return;
+  const html = `
+    <h3 class="modal-title">Edit Bin — ${b.name}</h3>
+    <div class="form-group"><label class="form-label">Bin Name</label><input class="form-input" id="iot-m-name" value="${b.name}"></div>
+    <div class="form-group"><label class="form-label">Fill Rate (kg/h)</label><input class="form-input" type="number" id="iot-m-rate" value="${b.rate}" step="0.1" min="0.1"></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select class="form-select" id="iot-m-status">
+        <option value="active" ${b.status==='active'?'selected':''}>Active</option>
+        <option value="offline" ${b.status==='offline'?'selected':''}>Offline</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Mark as Emptied (Reset Fill to 0%)</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="iot-m-reset"> Reset fill level</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="iotSaveEditBin('${id}')">Save Changes ✓</button>
+    </div>`;
+  document.getElementById('modal-box').innerHTML = html;
+  document.getElementById('modal').classList.add('open');
+};
+
+window.iotSaveEditBin = function(id) {
+  const bins = getIoTBins();
+  const b = bins.find(x => x.id === id);
+  if (!b) return;
+  b.name   = document.getElementById('iot-m-name').value.trim() || b.name;
+  b.rate   = parseFloat(document.getElementById('iot-m-rate').value) || b.rate;
+  b.status = document.getElementById('iot-m-status').value;
+  if (document.getElementById('iot-m-reset').checked) { b.fill = 0; b.lastReading = Date.now(); }
+  saveIoTBins(bins);
+  closeModal();
+  showToast('✓ Bin updated.');
+  refreshCurrentView(true);
+};
+
+window.iotDeleteBin = function(id) {
+  if (!confirm('Remove this bin from the network?')) return;
+  const bins = getIoTBins().filter(b => b.id !== id);
+  saveIoTBins(bins);
+  showToast('Bin removed.');
+  refreshCurrentView(true);
+};
+
+window.iotDispatchFromBin = function(id) {
+  // Pre-fill a dispatch request for this bin
+  showView('v-pv-req');
+  showToast('⚠ Fill in quantity and submit to dispatch a collection for this bin.');
+};
+
 // ── INIT ──
 (function seedDB() {
   if (!DB.get('iot-bins')) {
+    const now = Date.now();
     const bins = [
-      { id: 'bin-1', name: 'West Wing Organic Hub', fill: 24, rate: 0.8, status: 'active' },
-      { id: 'bin-2', name: 'Kitchen Processing Unit', fill: 68, rate: 1.2, status: 'active' },
-      { id: 'bin-3', name: 'Main Disposal Pit', fill: 12, rate: 0.4, status: 'active' }
+      { id: 'bin-1', name: 'West Wing Organic Hub',   fill: 24,  rate: 0.8, status: 'active',  lastReading: now - 30000, temp: 23.1, humidity: 61, methane: 0.12 },
+      { id: 'bin-2', name: 'Kitchen Processing Unit', fill: 68,  rate: 1.2, status: 'active',  lastReading: now - 15000, temp: 27.4, humidity: 74, methane: 1.85 },
+      { id: 'bin-3', name: 'Main Disposal Pit',       fill: 91,  rate: 0.4, status: 'active',  lastReading: now - 8000,  temp: 25.0, humidity: 58, methane: 3.20 },
+      { id: 'bin-4', name: 'Rooftop Compost Bay',     fill: 12,  rate: 0.6, status: 'active',  lastReading: now - 60000, temp: 21.8, humidity: 52, methane: 0.04 }
     ];
     DB.set('iot-bins', bins);
   }

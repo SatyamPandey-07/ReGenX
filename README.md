@@ -1,37 +1,206 @@
-# ReGenX 
+<div align="center">
 
-ReGenX is a web page operations dashboard for smart bio-waste collection. It turns the implementation plan into a working web app with:
+# 🌿 ReGenX
 
-- pickup request creation
-- AI-style route publishing for riders
-- plant capacity monitoring with overflow prediction
-- rider earnings calculation
-- local persistence for demo sessions
-- Appwrite Sites deployment support
+### *Smart Circular Bio-Waste Logistics Platform*
 
-## Local development
+![HTML](https://img.shields.io/badge/HTML5-E34F26?style=flat&logo=html5&logoColor=white)
+![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat&logo=css3&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
+![TensorFlow](https://img.shields.io/badge/TensorFlow.js-FF6F00?style=flat&logo=tensorflow&logoColor=white)
+![Leaflet](https://img.shields.io/badge/Leaflet-199900?style=flat&logo=leaflet&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-5A0FC8?style=flat&logo=pwa&logoColor=white)
+![Chart.js](https://img.shields.io/badge/Chart.js-FF6384?style=flat&logo=chartdotjs&logoColor=white)
+
+> A premium Progressive Web App that digitizes the entire bio-waste supply chain — from hotel waste generation, through GPS-tracked rider pickup, to verified delivery at processing plants — all powered by AI and rewarded with blockchain tokens.
+
+</div>
+
+---
+
+## ✨ Features
+
+### 🤖 AI-Powered Bio Scanner
+- Real-time waste image analysis using **TensorFlow.js + MobileNet**
+- Contamination detection and organic percentage scoring
+- Auto-fills dispatch form fields based on scan results
+- Supports live camera capture and file upload
+
+### 📍 Real-Time GPS & Mapping
+- High-accuracy GPS detection with draggable pin refinement
+- Address-based geocoding via **Nominatim / OpenStreetMap**
+- 50km service radius enforcement for route eligibility
+- Live rider tracking with **Leaflet.js** interactive maps
+
+### 👥 Role-Based Dashboards
+| Role | Capabilities |
+|---|---|
+| 🏨 **Provider** (Hotel/Hostel) | Create dispatch requests, scan waste, track active pickups, view analytics |
+| 🚛 **Rider** | Accept routes, navigate to pickup, confirm collection with AI scan |
+| ⚗️ **Plant** | Monitor incoming waste flow, confirm receipt, log processed output |
+
+### 🪙 $RGX Token Economy
+- Providers earn **$RGX tokens** on every verified pickup
+- Trade tokens on the **ReGen DeFi Exchange** (CSR NFTs, Smart Bin Hardware, Energy Vouchers)
+- Stake tokens in the **Carbon Credit Fund** (12.5% APY)
+- Contribute to the **Amazon Reforestation Initiative** crowdfund
+
+### 🌍 Impact & Analytics
+- CO₂ offset calculator (per completed dispatch)
+- Weekly/Monthly waste history with Chart.js bar charts
+- Regional Leaderboard (top waste diverters in your area)
+- AI-predicted waste volume for next day
+- **The Green Wall** — live community sustainability activity feed
+
+### 🎨 Premium UI/UX
+- Glassmorphism design with dark/light theme toggle
+- Live ticker bar with real-time platform activity
+- Smooth micro-animations and transitions
+- Fully responsive — mobile-first PWA with offline support
+- Space Grotesk + Inter typography
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Structure | HTML5 (Semantic) |
+| Styling | Vanilla CSS3 (Glassmorphism, CSS Variables) |
+| Logic | Vanilla JavaScript (ES6 Modules) |
+| AI / ML | TensorFlow.js, MobileNet |
+| Maps | Leaflet.js, OpenStreetMap, Nominatim |
+| Charts | Chart.js |
+| PWA | Service Worker, Web App Manifest |
+| Weather | Open-Meteo API |
+| Storage | LocalStorage (demo-ready, no backend needed) |
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js (for local dev server)
+- A modern browser (Chrome / Edge recommended for camera access)
+
+### Run Locally
 
 ```bash
+# Clone the repository
+git clone https://github.com/your-username/ReGenX.git
+cd ReGenX
+
+# Install dependencies
+npm install
+
+# Start development server
 npm run serve
 ```
 
-## Appwrite deployment
+Then open `http://localhost:8080` in your browser.
 
-Appwrite Sites currently expects your project endpoint and project ID in addition to an API key. The deployment script uses server-side environment variables and keeps secrets out of the browser bundle.
+### First-Time Setup
+1. Click **Register** and choose your role (Provider / Rider / Plant)
+2. Set your location via GPS or address search
+3. Login and explore your role-specific dashboard
 
-1. Copy `.env.example` to `.env`.
-2. Fill in `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, and `APPWRITE_API_KEY`.
-3. Run:
+> **Tip:** Register at least one Provider and one Rider to simulate a full pickup flow!
 
+---
+
+## 📦 Deployment (Appwrite Sites)
+
+1. Copy `.env.example` to `.env`
+2. Fill in your Appwrite credentials:
+```env
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=your-project-id
+APPWRITE_API_KEY=your-private-api-key
+```
+3. Deploy:
 ```bash
 npm run deploy:appwrite
 ```
 
-The script will:
+> ⚠️ **Never expose your Appwrite API key in frontend code.**
 
-- create the Appwrite Site if it does not exist
-- upload the current static project as a deployment
-- wait for the deployment to finish
-- activate the deployment if Appwrite leaves it in `ready`
+The deploy script will:
+- Create the Appwrite Site if it doesn't exist
+- Upload the static project as a new deployment
+- Wait for build completion and auto-activate
 
-Never expose a private Appwrite API key in frontend code.
+---
+
+## 📁 Project Structure
+
+```
+ReGenX/
+├── index.html              # App shell & login UI
+├── manifest.json           # PWA manifest
+├── service-worker.js       # Offline caching
+├── src/
+│   ├── app.js              # Core application logic (all roles)
+│   ├── scanner.js          # BioScanner AI module (TensorFlow.js)
+│   └── styles.css          # Global design system & components
+├── scripts/                # Deployment scripts
+├── .env.example            # Environment variable template
+└── appwrite.config.example.json
+```
+
+---
+
+## 🔄 Pickup Workflow
+
+```
+Provider creates dispatch request
+        ↓
+   (Optional) BioScan AI verifies waste quality
+        ↓
+   Request appears on Rider's job board
+        ↓
+   Rider accepts → navigates to pickup location
+        ↓
+   Rider confirms collection (actual kg + AI scan)
+        ↓
+   Rider marks "Arrived at Plant"
+        ↓
+   Plant confirms receipt → order COMPLETED
+        ↓
+   Provider earns $RGX tokens 🪙
+```
+
+---
+
+## 🌱 Environmental Impact
+
+Every completed dispatch through ReGenX:
+- Diverts bio-waste from landfills
+- Calculates **CO₂ offset** (0.62 kg CO₂ per kg bio-waste)
+- Mints verifiable $RGX carbon credits
+- Contributes to the global Green Wall feed
+
+---
+
+## 📸 Screenshots
+
+> *Coming soon — deploy and capture your dashboard!*
+
+---
+
+## 🤝 Contributing
+
+Pull requests are welcome! For major changes, please open an issue first to discuss what you'd like to change.
+
+---
+
+## 📄 License
+
+This project is open source. See [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+Made with 💚 for a cleaner planet · **ReGenX** · *Closing the loop on bio-waste*
+
+</div>
