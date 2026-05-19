@@ -9,6 +9,7 @@ import { AuditPortal } from './audit-portal.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
+const ESG_ALERTS_KEY = "esg-alerts";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -235,6 +236,140 @@ function renderTrustIndexCard() {
         <div>${orderCount} verified order${orderCount === 1 ? '' : 's'}</div>
         <div>${anomalyRate}% anomaly rate</div>
       </div>
+    </div>
+  `;
+}
+
+/**
+ * Load ESG alerts from localStorage.
+ * @returns {Array<Object>} Alerts array.
+ */
+function loadEsgAlerts() {
+  try {
+    const raw = window.localStorage.getItem(ESG_ALERTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save ESG alerts to localStorage.
+ * @param {Array<Object>} alerts - Alerts to save.
+ */
+function saveEsgAlerts(alerts) {
+  try { window.localStorage.setItem(ESG_ALERTS_KEY, JSON.stringify(alerts)); } catch { /* ignore */ }
+}
+
+/**
+ * Append a new ESG alert.
+ * @param {Object} alert - Alert payload.
+ */
+function addEsgAlert(alert) {
+  const alerts = loadEsgAlerts();
+  alerts.push(alert);
+  saveEsgAlerts(alerts);
+}
+
+/**
+ * Resolve an ESG alert by id.
+ * @param {string} id - Alert id.
+ */
+window.resolveEsgAlert = function(id) {
+  const alerts = loadEsgAlerts();
+  const target = alerts.find(a => a.id === id);
+  if (target) target.resolved = true;
+  saveEsgAlerts(alerts);
+  refreshCurrentView(true);
+}
+
+/**
+ * Clear all ESG alerts.
+ */
+window.clearEsgAlerts = function() {
+  if (!confirm('Clear all compliance alerts?')) return;
+  saveEsgAlerts([]);
+  refreshCurrentView(true);
+}
+
+/**
+ * Create compliance alerts for a completed order.
+ * @param {Object} order - Completed order.
+ */
+function addEsgAlertsForOrder(order) {
+  if (!order) return;
+  const alerts = [];
+  const expected = parseFloat(order.kg || 0);
+  const actual = parseFloat(order.actualKg || 0);
+  const diffRatio = expected ? Math.abs(actual - expected) / expected : 0;
+
+  if (expected && actual && diffRatio > 0.25) {
+    alerts.push({
+      id: 'alert-' + uid(),
+      orderId: order.id,
+      type: 'weight_mismatch',
+      severity: 'high',
+      message: `Weight variance ${Math.round(diffRatio * 100)}% exceeds compliance threshold.`,
+      ts: ts(),
+      resolved: false
+    });
+  }
+
+  if (parseFloat(order.segScore || 0) > 0 && parseFloat(order.segScore || 0) < 60) {
+    alerts.push({
+      id: 'alert-' + uid(),
+      orderId: order.id,
+      type: 'low_segregation',
+      severity: 'medium',
+      message: 'Segregation score below 60 may impact ESG certification.',
+      ts: ts(),
+      resolved: false
+    });
+  }
+
+  const integrity = getOrderIntegrity(order);
+  if (integrity.score < 60) {
+    alerts.push({
+      id: 'alert-' + uid(),
+      orderId: order.id,
+      type: 'integrity_risk',
+      severity: 'high',
+      message: 'Integrity score below 60 suggests custody or route anomaly.',
+      ts: ts(),
+      resolved: false
+    });
+  }
+
+  alerts.forEach(addEsgAlert);
+}
+
+/**
+ * Render a compact compliance radar widget.
+ * @returns {string} HTML string.
+ */
+function renderComplianceWidget() {
+  const alerts = loadEsgAlerts().filter(a => !a.resolved).sort((a, b) => b.ts - a.ts);
+  const items = alerts.slice(0, 3).map(a => `
+    <div class="compliance-item">
+      <div>
+        <div class="compliance-title">${a.message}</div>
+        <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
+      </div>
+      <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="glass-card compliance-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Compliance Radar</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${alerts.length} active alert${alerts.length === 1 ? '' : 's'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-compliance')">Open →</button>
+      </div>
+      ${alerts.length ? items : '<div class="empty-state" style="padding:24px;">No compliance alerts detected.</div>'}
     </div>
   `;
 }
@@ -601,6 +736,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-iot-bins')" id="nav-v-iot-bins"><span class="nav-item-icon">🗑️</span> IoT Sensory Bins <span class="nav-badge" id="iot-alert-badge" style="display:none">!</span></button>
       <button class="nav-item" onclick="showView('v-pv-hist-week')" id="nav-v-pv-hist-week"><span class="nav-item-icon">📅</span> Weekly Records</button>
       <button class="nav-item" onclick="showView('v-pv-hist-month')" id="nav-v-pv-hist-month"><span class="nav-item-icon">🗓️</span> Monthly Records</button>
+      <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -611,6 +747,7 @@ function buildSidebar() {
       <button class="nav-item active" onclick="showView('v-rd-dash')" id="nav-v-rd-dash"><span class="nav-item-icon">🗺️</span> Active Route</button>
       <button class="nav-item" onclick="showView('v-rd-jobs')" id="nav-v-rd-jobs"><span class="nav-item-icon">📋</span> Available Jobs <span class="nav-badge" id="rd-badge" style="display:none">0</span></button>
       <button class="nav-item" onclick="showView('v-rd-hist')" id="nav-v-rd-hist"><span class="nav-item-icon">✓</span> Completions</button>
+      <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -620,6 +757,7 @@ function buildSidebar() {
       <button class="nav-item active" onclick="showView('v-pl-dash')" id="nav-v-pl-dash"><span class="nav-item-icon">🏭</span> Operations</button>
       <button class="nav-item" onclick="showView('v-pl-in')" id="nav-v-pl-in"><span class="nav-item-icon">🚚</span> Incoming Flow</button>
       <button class="nav-item" onclick="showView('v-pl-out')" id="nav-v-pl-out"><span class="nav-item-icon">⚗️</span> Log Output</button>
+      <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -633,7 +771,7 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins' };
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center' };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -735,6 +873,10 @@ async function refreshCurrentView(fullRender = false) {
     AuditPortal.renderPortal(mc, fullRender);
     return;
   }
+  if (currentView === 'v-compliance') {
+    renderCompliance(mc, fullRender);
+    return;
+  }
   if (currentView === 'v-market') {
     const globalFunded = DB.get('global-fund') || 45200;
     const staked = SESSION.staked || 0;
@@ -808,6 +950,79 @@ async function refreshCurrentView(fullRender = false) {
   if (SESSION.role === 'plant') await renderPlant(mc, fullRender);
 }
 
+/**
+ * Render compliance center view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderCompliance(mc, fullRender) {
+  const alerts = loadEsgAlerts().sort((a, b) => b.ts - a.ts);
+  const openAlerts = alerts.filter(a => !a.resolved);
+  const resolvedAlerts = alerts.filter(a => a.resolved);
+
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Compliance Center</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Real-time ESG anomalies and audit flags.</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="clearEsgAlerts()">Clear All</button>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${openAlerts.length}</div><div class="stat-lbl">Active Alerts</div></div>
+      <div class="stat-card"><div class="stat-val">${resolvedAlerts.length}</div><div class="stat-lbl">Resolved</div></div>
+      <div class="stat-card"><div class="stat-val">${alerts.length}</div><div class="stat-lbl">Total Flags</div></div>
+      <div class="stat-card"><div class="stat-val">${Math.round((openAlerts.length / Math.max(alerts.length, 1)) * 100)}%</div><div class="stat-lbl">Open Rate</div></div>
+    </div>
+
+    <div class="two-col" style="align-items: stretch;">
+      <div class="glass-card compliance-card">
+        <div class="between" style="margin-bottom:12px;">
+          <h4 style="font-size:16px;">Active Alerts</h4>
+          <span class="badge badge-amber">${openAlerts.length} Open</span>
+        </div>
+        <div class="compliance-list">
+          ${openAlerts.length ? openAlerts.map(a => `
+            <div class="compliance-item">
+              <div>
+                <div class="compliance-title">${a.message}</div>
+                <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="badge ${a.severity === 'high' ? 'badge-red' : 'badge-amber'}">${a.severity.toUpperCase()}</span>
+                <button class="btn btn-ghost btn-sm" onclick="resolveEsgAlert('${a.id}')">Resolve</button>
+              </div>
+            </div>
+          `).join('') : '<div class="empty-state">No active alerts.</div>'}
+        </div>
+      </div>
+
+      <div class="glass-card compliance-card">
+        <div class="between" style="margin-bottom:12px;">
+          <h4 style="font-size:16px;">Resolved Alerts</h4>
+          <span class="badge badge-green">${resolvedAlerts.length} Done</span>
+        </div>
+        <div class="compliance-list">
+          ${resolvedAlerts.length ? resolvedAlerts.slice(0, 8).map(a => `
+            <div class="compliance-item resolved">
+              <div>
+                <div class="compliance-title">${a.message}</div>
+                <div class="compliance-sub">Order #${a.orderId.slice(-6).toUpperCase()} · ${fmtDate(a.ts)}</div>
+              </div>
+              <span class="badge badge-green">RESOLVED</span>
+            </div>
+          `).join('') : '<div class="empty-state">No resolved alerts yet.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ════════ PROVIDER LOGIC ════════
 async function renderProvider(mc, fullRender) {
   const orders = getAllOrders().filter(o => o.providerId === SESSION.id);
@@ -828,6 +1043,7 @@ async function renderProvider(mc, fullRender) {
 
       <div class="stats-grid" id="pv-stats"></div>
       ${renderTrustIndexCard()}
+      ${renderComplianceWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -1339,6 +1555,7 @@ async function renderRider(mc, fullRender) {
       </div>
 
       ${renderTrustIndexCard()}
+      ${renderComplianceWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -1775,6 +1992,7 @@ async function renderPlant(mc, fullRender) {
       <div class="stats-grid" id="pl-stats"></div>
 
       ${renderTrustIndexCard()}
+      ${renderComplianceWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -1948,6 +2166,7 @@ window.confirmPlantReceipt = function(id) {
   saveOrder(o);
   recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+  addEsgAlertsForOrder(o);
   closeModal();
   refreshCurrentView();
   showToast(`✓ Intake Confirmed. Minted ${earnedTokens} $RGX for provider!`);

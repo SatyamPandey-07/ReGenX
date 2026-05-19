@@ -337,6 +337,23 @@ tr:hover td { background: var(--bg); }
 .trust-tl-sub { font-size: 11px; color: var(--text-muted); }
 @keyframes integrity-spin { 100% { transform: rotate(360deg); } }
 
+/* COMPLIANCE CENTER */
+.compliance-card { border: 1px solid var(--border); }
+.compliance-list { display: flex; flex-direction: column; gap: 12px; }
+.compliance-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.compliance-item.resolved { opacity: 0.75; }
+.compliance-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.compliance-sub { font-size: 11px; color: var(--text-muted); }
+
 /* TOASTS & MODALS */
 #toast {
   position: fixed; bottom: 32px; right: 32px; z-index: 9999;
