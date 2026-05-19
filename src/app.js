@@ -10,6 +10,7 @@ import { AuditPortal } from './audit-portal.js';
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
 const ESG_ALERTS_KEY = "esg-alerts";
+const CREDIT_LEDGER_KEY = "credit-ledger";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -374,6 +375,75 @@ function renderComplianceWidget() {
   `;
 }
 
+/**
+ * Load credit ledger entries from localStorage.
+ * @returns {Array<Object>} Ledger entries.
+ */
+function loadCreditLedger() {
+  try {
+    const raw = window.localStorage.getItem(CREDIT_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save credit ledger entries to localStorage.
+ * @param {Array<Object>} entries - Ledger entries.
+ */
+function saveCreditLedger(entries) {
+  try { window.localStorage.setItem(CREDIT_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a credit ledger entry.
+ * @param {Object} entry - Ledger entry.
+ */
+function addCreditEntry(entry) {
+  const entries = loadCreditLedger();
+  entries.push(entry);
+  saveCreditLedger(entries);
+}
+
+/**
+ * Compute reconciliation status.
+ * @returns {{total:number, mismatches:number, score:number}}
+ */
+function getReconciliationSummary() {
+  const entries = loadCreditLedger();
+  if (!entries.length) return { total: 0, mismatches: 0, score: 100 };
+  const mismatches = entries.filter(e => e.deltaPct >= 8).length;
+  const score = Math.max(0, Math.round(100 - (mismatches / entries.length) * 100));
+  return { total: entries.length, mismatches, score };
+}
+
+/**
+ * Render a reconciliation widget.
+ * @returns {string} HTML string.
+ */
+function renderReconciliationWidget() {
+  const summary = getReconciliationSummary();
+  const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card reconciliation-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Carbon Credit Reconciliation</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.score}% Integrity</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.mismatches} mismatch${summary.mismatches === 1 ? '' : 'es'}</span>
+      </div>
+      <div class="reconciliation-bar"><span style="width:${summary.score}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.total} ledger entries</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-reconciliation')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function ts() { return Date.now(); }
 function fmtDate(ms) { return new Date(ms).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }
@@ -731,6 +801,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-pv-hist-week')" id="nav-v-pv-hist-week"><span class="nav-item-icon">📅</span> Weekly Records</button>
       <button class="nav-item" onclick="showView('v-pv-hist-month')" id="nav-v-pv-hist-month"><span class="nav-item-icon">🗓️</span> Monthly Records</button>
       <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
+      <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -742,6 +813,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-rd-jobs')" id="nav-v-rd-jobs"><span class="nav-item-icon">📋</span> Available Jobs <span class="nav-badge" id="rd-badge" style="display:none">0</span></button>
       <button class="nav-item" onclick="showView('v-rd-hist')" id="nav-v-rd-hist"><span class="nav-item-icon">✓</span> Completions</button>
       <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
+      <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -752,6 +824,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-pl-in')" id="nav-v-pl-in"><span class="nav-item-icon">🚚</span> Incoming Flow</button>
       <button class="nav-item" onclick="showView('v-pl-out')" id="nav-v-pl-out"><span class="nav-item-icon">⚗️</span> Log Output</button>
       <button class="nav-item" onclick="showView('v-compliance')" id="nav-v-compliance"><span class="nav-item-icon">🧭</span> Compliance Center</button>
+      <button class="nav-item" onclick="showView('v-reconciliation')" id="nav-v-reconciliation"><span class="nav-item-icon">🧮</span> Reconciliation</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -765,7 +838,7 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center' };
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation' };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -869,6 +942,10 @@ async function refreshCurrentView(fullRender = false) {
   }
   if (currentView === 'v-compliance') {
     renderCompliance(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-reconciliation') {
+    renderReconciliation(mc, fullRender);
     return;
   }
   if (currentView === 'v-market') {
@@ -1017,6 +1094,52 @@ function renderCompliance(mc, fullRender) {
   `;
 }
 
+/**
+ * Render reconciliation center view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderReconciliation(mc, fullRender) {
+  const entries = loadCreditLedger().sort((a, b) => b.ts - a.ts);
+  const mismatches = entries.filter(e => e.deltaPct >= 8);
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Carbon Credit Reconciliation</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Cross-verify minted credits against expected ESG yields.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${entries.length}</div><div class="stat-lbl">Ledger Entries</div></div>
+      <div class="stat-card" style="border-top-color:var(--amber);"><div class="stat-val">${mismatches.length}</div><div class="stat-lbl">Mismatches</div></div>
+      <div class="stat-card"><div class="stat-val">${getReconciliationSummary().score}%</div><div class="stat-lbl">Integrity Score</div></div>
+      <div class="stat-card"><div class="stat-val">${Math.round((mismatches.length / Math.max(entries.length, 1)) * 100)}%</div><div class="stat-lbl">Mismatch Rate</div></div>
+    </div>
+
+    <div class="glass-card reconciliation-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Ledger Entries</h4>
+        <span class="badge ${mismatches.length ? 'badge-amber' : 'badge-green'}">${mismatches.length} mismatch${mismatches.length === 1 ? '' : 'es'}</span>
+      </div>
+      <div class="reconciliation-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="reconciliation-item ${e.deltaPct >= 8 ? 'flagged' : ''}">
+            <div>
+              <div class="reconciliation-title">Order #${e.orderId.slice(-6).toUpperCase()} · ${e.org}</div>
+              <div class="reconciliation-sub">Expected ${e.expectedTokens} $RGX · Minted ${e.mintedTokens} $RGX · Δ ${e.deltaPct.toFixed(1)}%</div>
+              <div class="reconciliation-sub">${fmtDate(e.ts)} · Trust ${e.trustScore}%</div>
+            </div>
+            <span class="badge ${e.deltaPct >= 8 ? 'badge-red' : 'badge-green'}">${e.deltaPct >= 8 ? 'FLAG' : 'OK'}</span>
+          </div>
+        `).join('') : '<div class="empty-state">No reconciliation entries yet.</div>'}
+      </div>
+    </div>
+  `;
+}
+
 // ════════ PROVIDER LOGIC ════════
 async function renderProvider(mc, fullRender) {
   const orders = getAllOrders().filter(o => o.providerId === SESSION.id);
@@ -1038,6 +1161,7 @@ async function renderProvider(mc, fullRender) {
       <div class="stats-grid" id="pv-stats"></div>
       ${renderTrustIndexCard()}
       ${renderComplianceWidget()}
+      ${renderReconciliationWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -1550,6 +1674,7 @@ async function renderRider(mc, fullRender) {
 
       ${renderTrustIndexCard()}
       ${renderComplianceWidget()}
+      ${renderReconciliationWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -1987,6 +2112,7 @@ async function renderPlant(mc, fullRender) {
 
       ${renderTrustIndexCard()}
       ${renderComplianceWidget()}
+      ${renderReconciliationWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -2144,7 +2270,8 @@ window.confirmPlantReceipt = function(id) {
   if (providerAcc) {
      const providerHistory = getAllOrders().filter(ord => ord.providerId === o.providerId && ord.status === 'completed');
      const trustScore = TrustProtocol.calculateScore(providerAcc, providerHistory);
-     const earnedTokens = TrustProtocol.calculateReward(Math.round((o.actualKg || o.kg) * 2), trustScore);
+      const baseTokens = Math.round((o.actualKg || o.kg) * 2);
+      const earnedTokens = TrustProtocol.calculateReward(baseTokens, trustScore);
      
      providerAcc.tokens = (providerAcc.tokens || 0) + earnedTokens;
      o.tokensMinted = earnedTokens;
@@ -2155,6 +2282,19 @@ window.confirmPlantReceipt = function(id) {
          SESSION.tokens = providerAcc.tokens;
          document.getElementById('token-balance').textContent = SESSION.tokens;
      }
+
+     const expectedTokens = TrustProtocol.calculateReward(baseTokens, trustScore);
+     const deltaPct = expectedTokens ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
+     addCreditEntry({
+       id: 'credit-' + uid(),
+       orderId: o.id,
+       org: o.providerOrg,
+       expectedTokens,
+       mintedTokens: earnedTokens,
+       deltaPct,
+       trustScore,
+       ts: ts()
+     });
   }
 
   saveOrder(o);
