@@ -220,7 +220,7 @@ h1, h2, h3, .heading { font-family: 'Space Grotesk', sans-serif; font-weight: 70
 .main-area { flex: 1; display: flex; flex-direction: column; overflow-y: auto; height: 100vh; position: relative; }
 .topbar { height: 72px; display: flex; justify-content: space-between; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 40; }
 .glass-nav { background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-.topbar-title { font-size: 22px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; background: -webkit-linear-gradient(45deg, var(--green), var(--blue)); -webkit-background-clip: text;
+.topbar-title { font-size: 22px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; margin-left: 8px;background: -webkit-linear-gradient(45deg, var(--green), var(--blue)); -webkit-background-clip: text;
   background-clip: text;                /* standard property — fixes Firefox warning */
   -webkit-text-fill-color: transparent;
   color: transparent; }
@@ -940,6 +940,7 @@ tr:hover td { background: var(--bg); }
 
 .mobile-tabs { display: none; }
 .hamburger { display: none; }
+@media (min-width: 769px) { .hamburger { display: none !important; } }
 .sidebar-overlay { display: none; }
 .mobile-quick-actions { display: none; }
 
