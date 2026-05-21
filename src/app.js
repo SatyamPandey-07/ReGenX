@@ -3278,6 +3278,7 @@ window.openPlantConfirm = function(id) {
 
 window.confirmPlantReceipt = function(id) {
   const o = getOrder(id); if(!o) return;
+  if (o.status === 'completed') return showToast('Order already processed.');
   const score = document.getElementById('p-score').value || 0;
   o.status = 'completed'; o.segScore = score;
   
@@ -3298,11 +3299,11 @@ window.confirmPlantReceipt = function(id) {
          document.getElementById('token-balance').textContent = SESSION.tokens;
      }
 
-     // Expected tokens represent the base (non-trust-multiplied) reward.
-     // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
-     // the trust bonus/penalty percentage (and enables mismatch flagging).
-     const expectedTokens = baseTokens;
-     const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
+      // Expected tokens represent the base (non-trust-multiplied) reward.
+      // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
+      // the trust bonus/penalty percentage (and enables mismatch flagging).
+      const expectedTokens = baseTokens;
+      const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
      addCreditEntry({
        id: 'credit-' + uid(),
        orderId: o.id,
