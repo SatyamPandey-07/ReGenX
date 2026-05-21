@@ -1,26 +1,28 @@
-<div align="center">
-
-### 👨‍🏫 Project Mentor
-**Satyam Pandey**
-
-- LinkedIn: https://www.linkedin.com/in/satyam-pandey-0b246432a/
-- Phone: 9820866720
-
 # 🌿 ReGenX
 
 ### *Smart Circular Bio-Waste Logistics Platform with AI scanning, real-time GPS tracking, and role-based dashboards for Providers, Riders & Processing Plants.*
 
-![HTML](https://img.shields.io/badge/HTML5-E34F26?style=flat&logo=html5&logoColor=white)
-![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat&logo=css3&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
-![TensorFlow](https://img.shields.io/badge/TensorFlow.js-FF6F00?style=flat&logo=tensorflow&logoColor=white)
+<div align="center">
+
+### 👨‍🏫 Project Mentor
+**SATYAM PANDEY**
+
+- LinkedIn: https://www.linkedin.com/in/satyam-pandey-0b246432a/
+- Phone: 9820866720
+
+</div>
+
+![HTML](https://www.flaticon.com/free-icon/html-file_4248142)
+![CSS3](https://iconscout.com/free-icon/free-css3-logo-icon_1720091)
+![JavaScript](https://frontendgirl.com/js-icon/)
+![TensorFlow](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8RVOErv4i_uPwV7iu0mbZpXs7zxLADAbTGg&s)
 ![Leaflet](https://img.shields.io/badge/Leaflet-199900?style=flat&logo=leaflet&logoColor=white)
 ![PWA](https://img.shields.io/badge/PWA-5A0FC8?style=flat&logo=pwa&logoColor=white)
 ![Chart.js](https://img.shields.io/badge/Chart.js-FF6384?style=flat&logo=chartdotjs&logoColor=white)
 
 > A premium Progressive Web App that digitizes the entire bio-waste supply chain — from hotel waste generation, through GPS-tracked rider pickup, to verified delivery at processing plants — all powered by AI and rewarded with blockchain tokens.
 
-</div>
+
 
 ---
 <div align="center">
