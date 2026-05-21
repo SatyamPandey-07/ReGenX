@@ -19,7 +19,7 @@
  LinkedIn: https://www.linkedin.com/in/satyam-pandey-0b246432a/
  Phone: 9820866720
 
-![HTML](https://img.shields.io/badge/HTML5-E34F26?style=flat&logo=html5&logoColor=white)
+![HTML](https://img.shields.io/badge/Built%20With-Love-red?style=for-the-badge)
 ![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat&logo=css3&logoColor=white)
 ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow.js-FF6F00?style=flat&logo=tensorflow&logoColor=white)
@@ -131,30 +131,41 @@ Ensure accessibility and mobile optimization
 ## 📁 Project Structure
 
 ```
+
+```bash
 ReGenX/
-├── .github/                  # GSSoC Issue and PR templates
-├── scripts/                  # Deployment scripts
-│   └── appwrite-deploy.mjs   # Appwrite automatic site deployment
+├── .github/                  
+│   ├── ISSUE_TEMPLATE/
+│   └── PULL_REQUEST_TEMPLATE/
+
+├── scripts/                  
+│   └── appwrite-deploy.mjs   
+
 ├── src/
-│   ├── app.js                # Core application logic (all roles)
-│   ├── esg-reporter.js       # ESG compliance and PDF report generator
-│   ├── intelligence.js       # Core data metrics computation layer
-│   ├── scanner.js            # BioScanner AI module configuration
-│   ├── styles.css            # Global premium design system & components
-│   ├── trust.js              # Fraud prevention and token mechanics
-│   ├── vision-scanner.js     # TensorFlow.js camera asset model loader
-│   └── yield-optimizer.js    # AI processing yield configuration tool
-├── .env.example              # Environment variable template
-├── .gitignore                # Git tracked-file exemptions
+│   ├── app.js                
+│   ├── esg-reporter.js       
+│   ├── intelligence.js       
+│   ├── scanner.js            
+│   ├── styles.css            
+│   ├── trust.js              
+│   ├── vision-scanner.js     
+│   └── yield-optimizer.js    
+
+├── .env.example              
+├── .gitignore                
 ├── appwrite.config.example.json
-├── index.html                # App shell & login UI
-├── manifest.json             # PWA mobile layout configuration
-├── package-lock.json
-├── package.json              # Build configuration and scripts
-├── push.bat                  # Automated local utility execution script
-├── README.md                 # Project documentation
-└── service-worker.js         # Offline caching and performance optimization
+
+├── index.html                
+├── manifest.json             
+├── package-lock.json         
+├── package.json              
+
+├── push.bat                  
+├── README.md                 
+
+└── service-worker.js         
 ```
+
 </div>
 ---
  
