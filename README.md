@@ -1,13 +1,11 @@
 <h1 align="center">
- ### 🌿 ReGenX
+  🌿 ReGenX
 </h1>
 
 <div align="center">
 
 ### *Smart Circular Bio-Waste Logistics Platform with AI scanning, real-time GPS tracking, and role-based dashboards for Providers, Riders & Processing Plants.*
 
-<br>
-<br>
 <br>
 <br>
 
@@ -142,7 +140,7 @@ ReGenX/
 └── service-worker.js         # Offline caching and performance optimization
 ```
 
-
+---
  
 ## 🚀 Getting Started
 
@@ -214,6 +212,8 @@ Deployment script automatically::
 ---
 
 <div align="center">
+
+---
  
 ## 🔄 Pickup Workflow
 
