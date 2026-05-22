@@ -117,8 +117,15 @@ export const CloudSync = {
             window.showToast("☁️ Real-Time: New Dispatch received from Appwrite Cloud!");
         }
 
+        if (window.handleRealtimeEvent) {
+            window.handleRealtimeEvent({
+                type: 'dispatch-created',
+                payload: mockOrder
+            });
+        }
+
         // Refresh view if on rider dashboard
-        if (window.currentView === 'v-r-dash' && window.refreshCurrentView) {
+        if (window.currentView === 'v-rd-dash' && window.refreshCurrentView) {
             window.refreshCurrentView();
         }
     },
