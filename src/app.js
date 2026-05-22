@@ -6,6 +6,8 @@ import { TrustProtocol } from './trust.js';
 import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
+import { ReGenXRealtime } from './realtime-sync.js';
+import { CloudSync } from './cloud-sync.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
@@ -15,6 +17,8 @@ const SLA_LEDGER_KEY = "sla-ledger";
 const ENERGY_LEDGER_KEY = "energy-ledger";
 const SENSOR_LEDGER_KEY = "sensor-ledger";
 const EMISSIONS_LEDGER_KEY = "emissions-ledger";
+const QUALITY_LEDGER_KEY = "quality-ledger";
+const AUTOMATION_PIPELINE_KEY = "automation-pipeline";
 
 // ── PWA Service Worker v3 Registration ──
 if ('serviceWorker' in navigator) {
@@ -79,7 +83,18 @@ const SHIFTS = ['Morning Shift (08:00 - 12:00)', 'Evening Shift (16:00 - 20:00)'
 // ── DB HELPER ──
 const DB = {
   get: (key) => { try { const r = window.localStorage.getItem(STORAGE_KEY_PREFIX + key); return r ? JSON.parse(r) : null; } catch { return null; } },
-  set: (key, val) => { try { window.localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(val)); return true; } catch { return false; } },
+  set: (key, val, options = {}) => { try {
+    window.localStorage.setItem(STORAGE_KEY_PREFIX + key, JSON.stringify(val));
+    if (!options.silent && ReGenXRealtime) {
+      ReGenXRealtime.syncStorageMutation({
+        updates: [{ key: STORAGE_KEY_PREFIX + key, value: val, action: 'set' }],
+        rooms: options.rooms,
+        eventType: options.eventType || 'KPI_UPDATED',
+        meta: options.meta || {}
+      });
+    }
+    return true;
+  } catch { return false; } },
   list: (prefix) => {
     try {
       const keys = [];
@@ -91,6 +106,25 @@ const DB = {
     } catch { return []; }
   }
 };
+
+function getRealtimeRoomsForRole(role) {
+  const rooms = ['network_room'];
+  if (role === 'provider') rooms.push('providers_room');
+  if (role === 'rider') rooms.push('riders_room');
+  if (role === 'plant') rooms.push('plants_room');
+  rooms.push('admin_room');
+  return Array.from(new Set(rooms));
+}
+
+function publishOperationalEvent(type, updates = [], meta = {}, rooms = null) {
+  if (!ReGenXRealtime) return;
+  ReGenXRealtime.emitOperationalEvent({
+    type,
+    rooms: rooms || getRealtimeRoomsForRole(SESSION.role),
+    updates,
+    meta
+  });
+}
 
 /**
  * Load trust ledger events from localStorage.
@@ -111,7 +145,10 @@ function loadTrustLedger() {
  * @param {Array<Object>} events - Ledger events.
  */
 function saveTrustLedger(events) {
-  try { window.localStorage.setItem(TRUST_LEDGER_KEY, JSON.stringify(events)); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(TRUST_LEDGER_KEY, JSON.stringify(events));
+    ReGenXRealtime?.syncRawKey(TRUST_LEDGER_KEY, events, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch { /* ignore */ }
 }
 
 /**
@@ -274,7 +311,10 @@ function loadEsgAlerts() {
  * @param {Array<Object>} alerts - Alerts to save.
  */
 function saveEsgAlerts(alerts) {
-  try { window.localStorage.setItem(ESG_ALERTS_KEY, JSON.stringify(alerts)); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(ESG_ALERTS_KEY, JSON.stringify(alerts));
+    ReGenXRealtime?.syncRawKey(ESG_ALERTS_KEY, alerts, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch { /* ignore */ }
 }
 
 /**
@@ -415,7 +455,10 @@ function loadCreditLedger() {
  * @param {Array<Object>} entries - Ledger entries.
  */
 function saveCreditLedger(entries) {
-  try { window.localStorage.setItem(CREDIT_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(CREDIT_LEDGER_KEY, JSON.stringify(entries));
+    ReGenXRealtime?.syncRawKey(CREDIT_LEDGER_KEY, entries, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room'] });
+  } catch { /* ignore */ }
 }
 
 /**
@@ -494,7 +537,10 @@ function loadSlaLedger() {
  * @param {Array<Object>} entries - SLA entries.
  */
 function saveSlaLedger(entries) {
-  try { window.localStorage.setItem(SLA_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(SLA_LEDGER_KEY, JSON.stringify(entries));
+    ReGenXRealtime?.syncRawKey(SLA_LEDGER_KEY, entries, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room'] });
+  } catch { /* ignore */ }
 }
 
 /**
@@ -557,6 +603,16 @@ function getSlaSummary() {
  */
 function renderSlaWidget() {
   const summary = getSlaSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⏱️',
+      title: 'No dispatch SLA data',
+      description: 'Dispatch activity tracking will begin once orders are processed.',
+      subtext: 'SLA metrics and on-time performance will appear after your first completed dispatch.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sla-card" style="margin-bottom:24px;">
@@ -595,7 +651,10 @@ function loadEnergyLedger() {
  * @param {Array<Object>} entries - Energy entries.
  */
 function saveEnergyLedger(entries) {
-  try { window.localStorage.setItem(ENERGY_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(ENERGY_LEDGER_KEY, JSON.stringify(entries));
+    ReGenXRealtime?.syncRawKey(ENERGY_LEDGER_KEY, entries, { eventType: 'KPI_UPDATED', rooms: ['network_room', 'providers_room', 'plants_room'] });
+  } catch { /* ignore */ }
 }
 
 /**
@@ -626,6 +685,16 @@ function getEnergySummary() {
  */
 function renderEnergyWidget() {
   const summary = getEnergySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '⚡',
+      title: 'No energy analytics yet',
+      description: 'Energy yield scoring is available once plant processing data is recorded.',
+      subtext: 'Complete your first intake and log biogas output to see efficiency metrics.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card energy-card" style="margin-bottom:24px;">
@@ -697,6 +766,17 @@ function getSensorReliabilitySummary() {
  */
 function renderSensorWidget() {
   const summary = getSensorReliabilitySummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '📡',
+      title: 'No IoT bins connected',
+      description: 'Sensor network monitoring requires registered IoT bins.',
+      subtext: 'Register your first waste bin to track fill levels and receive alerts.',
+      statusLabel: 'Idle',
+      tone: 'inactive',
+      actionHtml: SESSION.role === 'provider' ? '<button class="btn btn-ghost btn-sm" onclick="showView(\'v-iot-bins\')" style="margin-top:8px;">Connect Bins →</button>' : ''
+    });
+  }
   const badgeClass = summary.score >= 90 ? 'badge-green' : summary.score >= 75 ? 'badge-blue' : summary.score >= 60 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card sensor-reliability-card" style="margin-bottom:24px;">
@@ -767,6 +847,16 @@ function getEmissionsSummary() {
  */
 function renderEmissionsWidget() {
   const summary = getEmissionsSummary();
+  if (!summary.total) {
+    return renderEmptyStateCard({
+      icon: '🌍',
+      title: 'No emissions data recorded',
+      description: 'Route emissions tracking requires completed deliveries.',
+      subtext: 'Finish your first delivery to calculate carbon offset and emissions impact.',
+      statusLabel: 'Idle',
+      tone: 'inactive'
+    });
+  }
   const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
   return `
     <div class="glass-card emissions-card" style="margin-bottom:24px;">
@@ -781,6 +871,183 @@ function renderEmissionsWidget() {
       <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
         <div>${summary.totalOffset} kg offset</div>
         <button class="btn btn-ghost btn-sm" onclick="showView('v-emissions')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Load compost quality ledger entries.
+ * @returns {Array<Object>} Quality entries.
+ */
+function loadQualityLedger() {
+  try {
+    const raw = window.localStorage.getItem(QUALITY_LEDGER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save compost quality ledger entries.
+ * @param {Array<Object>} entries - Quality entries.
+ */
+function saveQualityLedger(entries) {
+  try { window.localStorage.setItem(QUALITY_LEDGER_KEY, JSON.stringify(entries)); } catch { /* ignore */ }
+}
+
+/**
+ * Add a compost quality ledger entry.
+ * @param {Object} entry - Quality entry.
+ */
+function addQualityEntry(entry) {
+  const entries = loadQualityLedger();
+  entries.push(entry);
+  saveQualityLedger(entries);
+}
+
+/**
+ * Summarize compost quality metrics.
+ * @returns {{total:number, avgScore:number, lowCount:number}}
+ */
+function getQualitySummary() {
+  const entries = loadQualityLedger();
+  if (!entries.length) return { total: 0, avgScore: 0, lowCount: 0 };
+  const avgScore = Math.round(entries.reduce((s, e) => s + e.score, 0) / entries.length);
+  const lowCount = entries.filter(e => e.score < 60).length;
+  return { total: entries.length, avgScore, lowCount };
+}
+
+/**
+ * Render compost quality widget.
+ * @returns {string} HTML string.
+ */
+function renderQualityWidget() {
+  const summary = getQualitySummary();
+  const badgeClass = summary.avgScore >= 85 ? 'badge-green' : summary.avgScore >= 70 ? 'badge-blue' : summary.avgScore >= 55 ? 'badge-amber' : 'badge-red';
+  return `
+    <div class="glass-card quality-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Compost Quality Index</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.avgScore || '--'} / 100</div>
+        </div>
+        <span class="badge ${badgeClass}">${summary.lowCount} low</span>
+      </div>
+      <div class="quality-bar"><span style="width:${summary.avgScore}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.total} batches graded</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-quality')">Open →</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Load automation pipeline tasks.
+ * @returns {Array<Object>} Pipeline tasks.
+ */
+function loadAutomationPipeline() {
+  try {
+    const raw = window.localStorage.getItem(AUTOMATION_PIPELINE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save automation pipeline tasks.
+ * @param {Array<Object>} tasks - Pipeline tasks.
+ */
+function saveAutomationPipeline(tasks) {
+  try { window.localStorage.setItem(AUTOMATION_PIPELINE_KEY, JSON.stringify(tasks)); } catch { /* ignore */ }
+}
+
+/**
+ * Seed default automation tasks for the admin pipeline.
+ * @returns {Array<Object>} Seeded tasks.
+ */
+function seedAutomationPipeline() {
+  const existing = loadAutomationPipeline();
+  if (existing.length) return existing;
+  const tasks = [
+    { id: 'auto-' + uid(), title: 'Triage new issues', owner: 'Unassigned', status: 'queued', priority: 'high', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Assign reviewers to PRs', owner: 'Unassigned', status: 'queued', priority: 'medium', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Label GSSoC issues', owner: 'Unassigned', status: 'queued', priority: 'high', ts: ts() },
+    { id: 'auto-' + uid(), title: 'Update project board', owner: 'Unassigned', status: 'queued', priority: 'low', ts: ts() }
+  ];
+  saveAutomationPipeline(tasks);
+  return tasks;
+}
+
+/**
+ * Update a pipeline task.
+ * @param {string} id - Task id.
+ * @param {Object} patch - Partial task fields.
+ */
+window.updateAutomationTask = function(id, patch) {
+  const tasks = loadAutomationPipeline();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  Object.assign(task, patch);
+  saveAutomationPipeline(tasks);
+  refreshCurrentView(true);
+}
+
+/**
+ * Auto-assign a queued task to the current user.
+ * @param {string} id - Task id.
+ */
+window.autoAssignTask = function(id) {
+  updateAutomationTask(id, { owner: SESSION.name || 'Admin', status: 'active' });
+}
+
+/**
+ * Auto-assign the next queued task.
+ */
+window.autoAssignNext = function() {
+  const tasks = loadAutomationPipeline();
+  const next = tasks.find(t => t.status === 'queued');
+  if (!next) return showToast('✓ No queued tasks left.');
+  updateAutomationTask(next.id, { owner: SESSION.name || 'Admin', status: 'active' });
+}
+
+/**
+ * Get automation pipeline summary.
+ * @returns {{queued:number, active:number, done:number}}
+ */
+function getAutomationSummary() {
+  const tasks = loadAutomationPipeline();
+  return {
+    queued: tasks.filter(t => t.status === 'queued').length,
+    active: tasks.filter(t => t.status === 'active').length,
+    done: tasks.filter(t => t.status === 'done').length
+  };
+}
+
+/**
+ * Render automation pipeline widget.
+ * @returns {string} HTML string.
+ */
+function renderAutomationWidget() {
+  const summary = getAutomationSummary();
+  return `
+    <div class="glass-card automation-card" style="margin-bottom:24px;">
+      <div class="between" style="margin-bottom:12px;">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Open Source Automation</div>
+          <div style="font-size:18px; font-weight:800; margin-top:4px;">${summary.queued} queued</div>
+        </div>
+        <span class="badge badge-blue">Admin Pipeline</span>
+      </div>
+      <div class="automation-bar"><span style="width:${Math.min(100, (summary.done / Math.max(summary.queued + summary.active + summary.done, 1)) * 100)}%;"></span></div>
+      <div class="between" style="margin-top:10px; font-size:12px; color:var(--text-muted);">
+        <div>${summary.active} active · ${summary.done} done</div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('v-automation')">Open →</button>
       </div>
     </div>
   `;
@@ -812,6 +1079,7 @@ window.resetAppData = function() {
     if (k && k.startsWith(STORAGE_KEY_PREFIX)) keysToRemove.push(k);
   }
   keysToRemove.forEach(k => window.localStorage.removeItem(k));
+  ReGenXRealtime?.clearOperationalState(keysToRemove);
   // Also clear theme preference
   window.localStorage.removeItem('regenx-theme');
   // Reload fresh
@@ -829,8 +1097,10 @@ window.fetchWeather = async function(lat, lng) {
 
 // ── STATE ──
 let SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+window.SESSION = SESSION;
 let selectedRole = 'provider';
 let currentView = '';
+window.currentView = currentView;
 let rMap = null; // Rider map instance
 let autoRefreshTimer = null;
 
@@ -1183,6 +1453,7 @@ window.fundProject = function() {
 
 function executeLogin(acc) {
   SESSION = acc;
+  window.SESSION = SESSION;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').classList.add('active');
   
@@ -1224,6 +1495,7 @@ function executeLogin(acc) {
   
   buildSidebar();
   autoRefreshTimer = setInterval(() => refreshCurrentView(), 15000);
+  ReGenXRealtime?.setSession(SESSION);
 }
 
 
@@ -1236,6 +1508,9 @@ window.doLogout = function() {
   if (plChartInstance) { plChartInstance.destroy(); plChartInstance = null; }
   if (rMap) { rMap.remove(); rMap = null; }
   SESSION = { role: null, name: '', org: '', uid: '', lat: null, lng: null };
+  window.SESSION = SESSION;
+  window.currentView = '';
+  ReGenXRealtime?.setSession(null);
   document.getElementById('app-shell').classList.remove('active');
   document.getElementById('login-screen').style.display = 'flex';
   switchAuthTab('login');
@@ -1257,6 +1532,8 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1273,6 +1550,8 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -1288,6 +1567,8 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-energy')" id="nav-v-energy"><span class="nav-item-icon">⚡</span> Energy Scorecard</button>
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
+      <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-automation')" id="nav-v-automation"><span class="nav-item-icon">⚙️</span> Automation Pipeline</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -1296,12 +1577,13 @@ function buildSidebar() {
 
 window.showView = function(viewId) {
   currentView = viewId;
+  window.currentView = currentView;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const btn = document.getElementById('nav-' + viewId);
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker' };
+  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker', 'v-quality': 'Quality Index', 'v-automation': 'Automation Pipeline' };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -1322,10 +1604,7 @@ window.toggleSidebar = function(force) {
 function getAllOrders() { return DB.list('ord:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 function getOrder(id) { return DB.get('ord:'+id); }
 function saveOrder(o) { 
-  DB.set('ord:'+o.id, o); 
-  if (window.CloudSync && window.CloudSync.isLive) {
-      window.CloudSync.pushDocument('orders', o);
-  }
+  DB.set('ord:'+o.id, o, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED' });
 }
 function getAllLogs() { return DB.list('log:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 
@@ -1564,6 +1843,14 @@ async function refreshCurrentView(fullRender = false) {
     renderEmissionsTracker(mc, fullRender);
     return;
   }
+  if (currentView === 'v-quality') {
+    renderQualityIndex(mc, fullRender);
+    return;
+  }
+  if (currentView === 'v-automation') {
+    renderAutomationPipeline(mc, fullRender);
+    return;
+  }
   if (currentView === 'v-market') {
     const globalFunded = DB.get('global-fund') || 45200;
     const staked = SESSION.staked || 0;
@@ -1580,7 +1867,7 @@ async function refreshCurrentView(fullRender = false) {
            <div class="between" style="margin-bottom:16px;">
              <div>
                <h4 style="margin-bottom:4px; font-size:18px;">Carbon Credit Staking</h4>
-               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${(DB.get('global-fund') || 45200 / 10).toFixed(1)} tons</strong> of CO2.</p>
+               <p style="font-size:13px; color:var(--text-muted);">Your collective waste diversion has offset <strong>${((DB.get('global-fund') || 45200) / 10).toFixed(1)} tons</strong> of CO2.</p>
              </div>
              <div style="text-align:right;">
                <div style="font-size:24px; font-weight:700; color:var(--blue);">12.5% <span style="font-size:14px">APY</span></div>
@@ -1986,6 +2273,101 @@ function renderEmissionsTracker(mc, fullRender) {
   `;
 }
 
+/**
+ * Render compost quality index view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderQualityIndex(mc, fullRender) {
+  const entries = loadQualityLedger().sort((a, b) => b.ts - a.ts);
+  const summary = getQualitySummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Compost Quality Index</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Track segregation scores and compost quality outcomes.</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.total}</div><div class="stat-lbl">Graded Batches</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.avgScore || 0}</div><div class="stat-lbl">Avg Score</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.lowCount}</div><div class="stat-lbl">Low Quality</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.total ? Math.round((summary.lowCount / summary.total) * 100) : 0}%</div><div class="stat-lbl">Low Rate</div></div>
+    </div>
+
+    <div class="glass-card quality-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Recent Batches</h4>
+        <span class="badge badge-blue">Segregation Score</span>
+      </div>
+      <div class="quality-list">
+        ${entries.length ? entries.slice(0, 12).map(e => `
+          <div class="quality-item">
+            <div>
+              <div class="quality-title">${e.org} · ${e.kg} kg processed</div>
+              <div class="quality-sub">Score ${e.score} · Seg ${e.segScore}% · ${fmtDate(e.ts)}</div>
+            </div>
+            <span class="badge ${e.score >= 85 ? 'badge-green' : e.score >= 70 ? 'badge-blue' : e.score >= 55 ? 'badge-amber' : 'badge-red'}">${e.score}</span>
+          </div>
+        `).join('') : '<div class="empty-state">No quality records yet.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render automation pipeline view.
+ * @param {HTMLElement} mc - Main content container.
+ * @param {boolean} fullRender - Whether to fully render.
+ */
+function renderAutomationPipeline(mc, fullRender) {
+  const tasks = seedAutomationPipeline().sort((a, b) => b.ts - a.ts);
+  const summary = getAutomationSummary();
+  if (!fullRender) return;
+
+  mc.innerHTML = `
+    <div class="between" style="margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h3 class="heading">Automation Pipeline</h3>
+        <div style="font-size:13px; color:var(--text-muted);">Streamline open-source operations with smart task assignment.</div>
+      </div>
+      <button class="btn btn-primary" onclick="autoAssignNext()">⚙️ Auto-Assign Next</button>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-val">${summary.queued}</div><div class="stat-lbl">Queued</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.active}</div><div class="stat-lbl">Active</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.done}</div><div class="stat-lbl">Done</div></div>
+      <div class="stat-card"><div class="stat-val">${summary.queued + summary.active + summary.done}</div><div class="stat-lbl">Total</div></div>
+    </div>
+
+    <div class="glass-card automation-card">
+      <div class="between" style="margin-bottom:12px;">
+        <h4 style="font-size:16px;">Task Queue</h4>
+        <span class="badge badge-blue">Automation Ops</span>
+      </div>
+      <div class="automation-list">
+        ${tasks.length ? tasks.map(t => `
+          <div class="automation-item">
+            <div>
+              <div class="automation-title">${t.title}</div>
+              <div class="automation-sub">${t.owner} · ${t.priority.toUpperCase()} · ${fmtDate(t.ts)}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="badge ${t.status === 'done' ? 'badge-green' : t.status === 'active' ? 'badge-amber' : 'badge-blue'}">${t.status.toUpperCase()}</span>
+              ${t.status === 'queued' ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignTask('${t.id}')">Assign</button>` : ''}
+              ${t.status !== 'done' ? `<button class="btn btn-ghost btn-sm" onclick="updateAutomationTask('${t.id}', { status: 'done' })">Done</button>` : ''}
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state">No automation tasks queued.</div>'}
+      </div>
+    </div>
+  `;
+}
+
 // ════════ PROVIDER LOGIC ════════
 async function renderProvider(mc, fullRender) {
   const orders = getAllOrders().filter(o => o.providerId === SESSION.id);
@@ -2012,6 +2394,8 @@ async function renderProvider(mc, fullRender) {
       ${renderEnergyWidget()}
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
+      ${renderAutomationWidget()}
       <div class="two-col">
         <div>
           <h3 class="heading" style="margin-bottom:16px;">Active Dispatches</h3><div id="pv-act"></div>
@@ -2112,15 +2496,27 @@ async function renderProvider(mc, fullRender) {
        id, org: (DB.get('acc:'+id)||{org:'Unknown'}).org, kg: lbMap[id]
     })).sort((a,b)=>b.kg - a.kg).slice(0,3);
     
-    const lbHTML = lbSorted.map((item, i) => `
-      <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
-         <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
-         <div class="badge badge-green">${item.kg} kg</div>
-      </div>
-    `).join('');
-    
     const lbDiv = document.getElementById('pv-leaderboard');
-    if(lbDiv) lbDiv.innerHTML = lbHTML;
+    if(lbDiv) {
+      if (!allCompleted.length) {
+        lbDiv.innerHTML = renderDashboardListState({
+          icon: '🏆',
+          title: 'Leaderboard coming soon',
+          description: 'Regional rankings update as you complete dispatches.',
+          subtext: 'Top contributors by material recovered will appear here.',
+          statusLabel: 'Idle',
+          tone: 'inactive'
+        });
+      } else {
+        const lbHTML = lbSorted.map((item, i) => `
+          <div class="between" style="padding:8px 0; border-bottom:${i<2?'1px solid var(--border)':'none'};">
+             <div style="font-weight:600;"><span style="color:var(--amber);">${i+1}.</span> ${item.org} ${item.id===SESSION.id?'(You)':''}</div>
+             <div class="badge badge-green">${item.kg} kg</div>
+          </div>
+        `).join('');
+        lbDiv.innerHTML = lbHTML;
+      }
+    }
 
     // Trust Protocol Integration
     const trustScore = TrustProtocol.calculateScore(SESSION, orders);
@@ -2413,7 +2809,7 @@ window.clearAllHistory = function(role) {
     if(role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
     return false;
   });
-  orders.forEach(o => window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'ord:' + o.id));
+  orders.forEach(o => ReGenXRealtime?.removeOrderKey(o.id, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED' }));
   showToast("✓ History Cleared");
   refreshCurrentView(true);
 }
@@ -2442,17 +2838,26 @@ window.submitPvRequest = function() {
   saveOrder(o);
   addSlaEntry(o);
   recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+  publishOperationalEvent('DISPATCH_CREATED', [], {
+    toast: `New dispatch created for ${nearest.org}.`,
+    statusLabel: 'Dispatch live'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   showToast(`✓ Dispatched! Routed to ${nearest.org} (${minDist.toFixed(1)}km away).`);
   showView('v-pv-dash');
 }
 
 window.cancelOrder = function(id) {
   const o = getOrder(id); if(!o) return;
-  o.status = 'rejected'; saveOrder(o); showToast("Cancelled."); refreshCurrentView();
+  o.status = 'rejected'; saveOrder(o);
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Dispatch #${o.id.slice(-6).toUpperCase()} was cancelled.`,
+    statusLabel: 'Cancelled'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
+  showToast("Cancelled."); refreshCurrentView();
 }
 
 window.deleteOrder = function(id) {
-  window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'ord:' + id);
+  ReGenXRealtime?.removeOrderKey(id, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED', meta: { statusLabel: 'Order removed' } });
   showToast("✓ Record Deleted");
   refreshCurrentView(true);
 }
@@ -2583,6 +2988,8 @@ async function renderRider(mc, fullRender) {
       ${renderEnergyWidget()}
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
+      ${renderAutomationWidget()}
 
       <div class="two-col">
         <div class="${tab !== 'route' ? 'desktop-only' : ''}">
@@ -2855,6 +3262,10 @@ window.riderAccept = function(id) {
   saveOrder(o);
   updateSlaEntry(o.id, { status: 'assigned' });
   recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Rider ${SESSION.name} accepted dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Route assigned'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   showToast("✓ Route Added to Batch!");
   showView('v-rd-dash');
 }
@@ -2863,6 +3274,10 @@ window.riderUpdate = function(id, st) {
   o.status = st; saveOrder(o);
   updateSlaEntry(o.id, { status: st });
   recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  publishOperationalEvent('KPI_UPDATED', [], {
+    toast: `Dispatch #${o.id.slice(-6).toUpperCase()} moved to ${st.replace('_', ' ')}.`,
+    statusLabel: 'Route moving'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   refreshCurrentView();
 }
 window.openPickupConfirm = function(id) {
@@ -2883,6 +3298,10 @@ window.confirmPickup = function(id) {
   saveOrder(o);
   updateSlaEntry(o.id, { pickupTs: ts(), status: 'picked_up' });
   recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  publishOperationalEvent('PICKUP_CONFIRMED', [], {
+    toast: `Pickup confirmed for dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Pickup live'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   closeModal();
   refreshCurrentView();
 }
@@ -3019,7 +3438,12 @@ window.openSettings = function() {
 
 window.deleteAccount = function() {
   if(confirm("Are you sure you want to permanently delete your account? This action cannot be undone.")) {
-    window.localStorage.removeItem(STORAGE_KEY_PREFIX + 'acc:' + SESSION.id);
+    ReGenXRealtime?.syncStorageMutation({
+      updates: [{ key: STORAGE_KEY_PREFIX + 'acc:' + SESSION.id, action: 'remove' }],
+      rooms: ['network_room', 'admin_room'],
+      eventType: 'KPI_UPDATED',
+      meta: { statusLabel: 'Account deleted' }
+    });
     closeModal();
     doLogout();
     refreshLoginDropdown();
@@ -3089,6 +3513,8 @@ async function renderPlant(mc, fullRender) {
       ${renderEnergyWidget()}
       ${renderSensorWidget()}
       ${renderEmissionsWidget()}
+      ${renderQualityWidget()}
+      ${renderAutomationWidget()}
       
       <div id="pl-ai-widget"></div>
       
@@ -3299,6 +3725,7 @@ window.openPlantConfirm = function(id) {
 
 window.confirmPlantReceipt = function(id) {
   const o = getOrder(id); if(!o) return;
+  if (o.status === 'completed') return showToast('Order already processed.');
   const score = document.getElementById('p-score').value || 0;
   o.status = 'completed'; o.segScore = score;
   
@@ -3319,11 +3746,11 @@ window.confirmPlantReceipt = function(id) {
          document.getElementById('token-balance').textContent = SESSION.tokens;
      }
 
-     // Expected tokens represent the base (non-trust-multiplied) reward.
-     // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
-     // the trust bonus/penalty percentage (and enables mismatch flagging).
-     const expectedTokens = baseTokens;
-     const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
+      // Expected tokens represent the base (non-trust-multiplied) reward.
+      // Minted tokens include the TrustProtocol multiplier, so deltaPct reflects
+      // the trust bonus/penalty percentage (and enables mismatch flagging).
+      const expectedTokens = baseTokens;
+      const deltaPct = expectedTokens > 0 ? Math.abs(earnedTokens - expectedTokens) / expectedTokens * 100 : 0;
      addCreditEntry({
        id: 'credit-' + uid(),
        orderId: o.id,
@@ -3336,16 +3763,25 @@ window.confirmPlantReceipt = function(id) {
      });
   }
 
+  const confirmed = confirm(
+  "Are you sure you want to mark this dispatch as completed?"
+  );
+
+  if (!confirmed) return;
+
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
   recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   addEsgAlertsForOrder(o);
+
   const kgProcessed = parseFloat(o.actualKg || o.kg || 0);
+
   if (kgProcessed > 0) {
     const energyKwh = parseFloat((kgProcessed * 0.35).toFixed(2));
     const efficiencyPct = Math.min(100, Math.round((energyKwh / (kgProcessed * 0.5)) * 100));
     const score = Math.max(10, Math.round((efficiencyPct * 0.7) + (o.segScore ? (o.segScore * 0.3) : 0)));
+
     addEnergyEntry({
       id: 'eng-' + uid(),
       orderId: o.id,
@@ -3357,6 +3793,11 @@ window.confirmPlantReceipt = function(id) {
       ts: ts()
     });
   }
+  
+  publishOperationalEvent('DELIVERY_COMPLETED', [], {
+    toast: `Plant confirmed receipt for dispatch #${o.id.slice(-6).toUpperCase()}.`,
+    statusLabel: 'Delivery complete'
+  }, ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room']);
   const route = getOrderRouteEndpoints(o);
   if (route.start && route.end) {
     const distanceKm = parseFloat(distanceKm(route.start.lat, route.start.lng, route.end.lat, route.end.lng).toFixed(1));
@@ -3371,6 +3812,19 @@ window.confirmPlantReceipt = function(id) {
       emissionKg,
       offsetKg,
       score,
+      ts: ts()
+    });
+  }
+  if (kgProcessed > 0) {
+    const segScore = parseFloat(o.segScore || 0);
+    const qualityScore = Math.max(10, Math.min(100, Math.round(segScore || 70)));
+    addQualityEntry({
+      id: 'qlt-' + uid(),
+      orderId: o.id,
+      org: o.providerOrg,
+      kg: kgProcessed,
+      segScore: segScore || 0,
+      score: qualityScore,
       ts: ts()
     });
   }
@@ -3736,6 +4190,11 @@ window.iotDispatchFromBin = function(id) {
   showToast('⚠ Fill in quantity and submit to dispatch a collection for this bin.');
 };
 
+window.refreshCurrentView = refreshCurrentView;
+window.refreshLoginDropdown = refreshLoginDropdown;
+window.startGreenWall = startGreenWall;
+window.syncIoTAlertBadge = syncIoTAlertBadge;
+
 // ── INIT ──
 (function seedDB() {
   if (!DB.get('iot-bins')) {
@@ -3754,6 +4213,7 @@ document.getElementById('login-screen').style.display = 'flex';
 switchAuthTab('login');
 
 // ── Initialize Appwrite Cloud Sync Engine ──
+setTimeout(() => { ReGenXRealtime?.init(); ReGenXRealtime?.requestSnapshot?.(); }, 1000);
 setTimeout(() => { if (window.CloudSync) window.CloudSync.init(); }, 1000);
 
 // Expose module-scoped functions to global scope for inline HTML handlers
@@ -3767,6 +4227,20 @@ window.resetAppData = resetAppData;
 window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
+window.saveOrder = saveOrder;
+window.refreshCurrentView = refreshCurrentView;
+
+/**
+ * Returns the currently active view ID.
+ * @returns {string} The active view ID.
+ */
+window.getCurrentView = () => currentView;
+
+/**
+ * Returns the active user session object.
+ * @returns {Object} The session object.
+ */
+window.getSESSION = () => SESSION;
 
 /**
  * @function animateAuthEntry
@@ -3800,3 +4274,36 @@ function detectDeviceClass() {
 
 detectDeviceClass();
 window.detectDeviceClass = detectDeviceClass;
+
+// ==========================================
+// DARK MODE TOGGLE LOGIC (ISSUE #79)
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const navToggleBtn = document.getElementById('navbar-theme-toggle');
+    const rootHtml = document.documentElement;
+
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        rootHtml.classList.add('dark');
+        if (navToggleBtn) navToggleBtn.innerText = '☀️';
+    } else {
+        rootHtml.classList.remove('dark');
+        if (navToggleBtn) navToggleBtn.innerText = '🌙';
+    }
+
+    if (navToggleBtn) {
+        navToggleBtn.addEventListener('click', () => {
+            if (rootHtml.classList.contains('dark')) {
+                rootHtml.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                navToggleBtn.innerText = '🌙';
+            } else {
+                rootHtml.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                navToggleBtn.innerText = '☀️';
+            }
+        });
+    }
+});
