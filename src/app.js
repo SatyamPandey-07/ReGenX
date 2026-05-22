@@ -2797,6 +2797,21 @@ window.doLogout = doLogout;
 window.toggleTheme = toggleTheme;
 window.toggleSidebar = toggleSidebar;
 window.toggleSmartAlerts = toggleSmartAlerts;
+window.saveOrder = saveOrder;
+window.refreshCurrentView = refreshCurrentView;
+
+/**
+ * Returns the currently active view ID.
+ * @returns {string} The active view ID.
+ */
+window.getCurrentView = () => currentView;
+
+/**
+ * Returns the active user session object.
+ * @returns {Object} The session object.
+ */
+window.getSESSION = () => SESSION;
+
 
 /**
  * @function animateAuthEntry
