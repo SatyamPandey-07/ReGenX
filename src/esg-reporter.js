@@ -56,8 +56,22 @@ export const ESGReporter = {
 
         // Calculate Metrics
         const totalKg = history.reduce((sum, o) => sum + (parseFloat(o.actualKg || o.kg) || 0), 0);
-        const totalCO2 = Math.round(totalKg * 0.62); // 0.62 kg CO2 per kg bio-waste
         const totalTokens = account.tokens || 0;
+
+        // Per-order CO₂ calculation using waste-type-specific IPCC 2006 / GHG Protocol factors
+        const co2Details = history.map(o => {
+            const kg = parseFloat(o.actualKg || o.kg) || 0;
+            const factor = window.getCO2Factor
+                ? window.getCO2Factor(o.wasteType, o.processingMethod)
+                : 0.55;
+            return {
+                wasteType: o.wasteType || 'Mixed kitchen waste',
+                kg,
+                factor,
+                co2: kg * factor
+            };
+        });
+        const totalCO2 = Math.round(co2Details.reduce((sum, d) => sum + d.co2, 0));
         
         // Mock a cryptographic hash for "verifiability"
         const reportHash = ESGReporter.generateAuditHash();
@@ -122,7 +136,32 @@ export const ESGReporter = {
             <p><strong>Total Validated Dispatches:</strong> ${history.length}</p>
             <p><strong>Trust Protocol Standing:</strong> Certified Compliant</p>
 
-            <div style="margin-top:60px; text-align:center; font-size:11px; color:#94A3B8;">
+            <h3 style="border-bottom:2px solid #E2E8F0; padding-bottom:8px; margin-bottom:16px; margin-top:40px;">Emission Factor Methodology</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px;">
+                <thead>
+                    <tr style="background:#F1F5F9;">
+                        <th style="padding:8px; text-align:left; border:1px solid #E2E8F0;">Waste Type</th>
+                        <th style="padding:8px; text-align:right; border:1px solid #E2E8F0;">Qty (kg)</th>
+                        <th style="padding:8px; text-align:right; border:1px solid #E2E8F0;">Factor (kg CO₂eq/kg)</th>
+                        <th style="padding:8px; text-align:right; border:1px solid #E2E8F0;">CO₂ Offset (kg)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${co2Details.map(d => `
+                    <tr>
+                        <td style="padding:8px; border:1px solid #E2E8F0;">${d.wasteType}</td>
+                        <td style="padding:8px; text-align:right; border:1px solid #E2E8F0;">${d.kg.toFixed(1)}</td>
+                        <td style="padding:8px; text-align:right; border:1px solid #E2E8F0;">${d.factor.toFixed(2)}</td>
+                        <td style="padding:8px; text-align:right; border:1px solid #E2E8F0;">${d.co2.toFixed(1)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+            <p style="font-size:11px; color:#64748B; margin-bottom:32px;">
+                <strong>Methodology:</strong> Emission factors sourced from IPCC 2006 Guidelines for National Greenhouse Gas
+                Inventories (Volume 5 — Waste) and the GHG Protocol Scope 3 Technical Guidance.
+                Factors vary by waste type and processing method (anaerobic digestion, composting, or biogas recovery).
+            </p>
+            <div style="margin-top:40px; text-align:center; font-size:11px; color:#94A3B8;">
                 <p>This document is digitally generated and verifiable via the ReGenX smart ledger.</p>
                 <p style="font-family:monospace; background:#F1F5F9; display:inline-block; padding:4px 8px; border-radius:4px;">Signature Hash (SHA-256): ${reportHash}</p>
             </div>
