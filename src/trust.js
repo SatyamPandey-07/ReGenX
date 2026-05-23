@@ -56,7 +56,7 @@ export const TrustProtocol = {
     /**
      * Gets the dynamic reward for a completed order based on trust.
      * @param {number} baseAmount 
-     * @param {number} score 
+     * @param {number} score - The user's trust score
      * @returns {number}
      */
     calculateReward: (baseAmount, score) => {
