@@ -1635,7 +1635,7 @@ function executeLogin(acc) {
   
   // GPS RECOVERY: If coordinates are missing, attempt auto-detect
   if(!acc.lat || !acc.lng) {
-    console.log('[GPS Recovery] Attempting auto-detection...');
+
     navigator.geolocation.getCurrentPosition(pos => {
       acc.lat = pos.coords.latitude; acc.lng = pos.coords.longitude;
       DB.set('acc:' + acc.id, acc);
