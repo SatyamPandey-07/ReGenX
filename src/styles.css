@@ -1533,6 +1533,8 @@ tr:hover td { background: var(--bg); }
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 20px;
   margin-bottom: 32px;
+  align-items: stretch;
+  grid-auto-rows: 1fr;
 }
 
 .esg-card-glow {

@@ -104,7 +104,10 @@ export const ESGReporter = {
                             <span class="status-badge status-badge-active">Waste Processed</span>
                         </div>
                         <div class="metric-hero-row" style="margin-top:16px;">
-                            <div class="metric-hero-value" id="esg-counter-waste">${totalKg.toLocaleString()} <span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">kg</span></div>
+                            <div class="metric-hero-value" style="display:flex; align-items:baseline; gap:4px; white-space:nowrap; flex-wrap:nowrap; width:100%;">
+                                <span id="esg-counter-waste" style="font-size:inherit; font-weight:inherit; color:inherit;">${totalKg.toLocaleString()}</span>
+                                <span style="font-size:16px; font-weight:700; color:var(--text-muted);">kg</span>
+                            </div>
                         </div>
                         <div class="metric-title" style="margin-top:8px;">Total Biomass Recovered</div>
                     </div>
@@ -115,7 +118,10 @@ export const ESGReporter = {
                             <span class="status-badge status-badge-loading">Carbon Offset</span>
                         </div>
                         <div class="metric-hero-row" style="margin-top:16px;">
-                            <div class="metric-hero-value" id="esg-counter-co2">${totalCO2.toLocaleString()} <span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">kg CO₂</span></div>
+                            <div class="metric-hero-value" style="display:flex; align-items:baseline; gap:4px; white-space:nowrap; flex-wrap:nowrap; width:100%;">
+                                <span id="esg-counter-co2" style="font-size:inherit; font-weight:inherit; color:inherit;">${totalCO2.toLocaleString()}</span>
+                                <span style="font-size:16px; font-weight:700; color:var(--text-muted);">kg CO₂</span>
+                            </div>
                         </div>
                         <div class="metric-title" style="margin-top:8px;">Emissions Savings Equivalent</div>
                     </div>
@@ -126,7 +132,10 @@ export const ESGReporter = {
                             <span class="badge ${qualityBadgeColor}">${avgSegScore}% Score</span>
                         </div>
                         <div class="metric-hero-row" style="margin-top:16px;">
-                            <div class="metric-hero-value">${avgSegScore}<span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">/100</span></div>
+                            <div class="metric-hero-value" style="display:flex; align-items:baseline; gap:4px; white-space:nowrap; flex-wrap:nowrap; width:100%;">
+                                <span style="font-size:inherit; font-weight:inherit; color:inherit;">${avgSegScore}</span>
+                                <span style="font-size:16px; font-weight:700; color:var(--text-muted);">/100</span>
+                            </div>
                         </div>
                         <div class="metric-title" style="margin-top:8px;">${qualityText}</div>
                     </div>
@@ -137,7 +146,10 @@ export const ESGReporter = {
                             <span class="status-badge status-badge-warning">${history.length} Jobs</span>
                         </div>
                         <div class="metric-hero-row" style="margin-top:16px;">
-                            <div class="metric-hero-value">${totalTokens.toLocaleString()} <span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">$RGX</span></div>
+                            <div class="metric-hero-value" style="display:flex; align-items:baseline; gap:4px; white-space:nowrap; flex-wrap:nowrap; width:100%;">
+                                <span style="font-size:inherit; font-weight:inherit; color:inherit;">${totalTokens.toLocaleString()}</span>
+                                <span style="font-size:16px; font-weight:700; color:var(--text-muted);">$RGX</span>
+                            </div>
                         </div>
                         <div class="metric-title" style="margin-top:8px;">Web3 Rewards Earned</div>
                     </div>
@@ -147,7 +159,10 @@ export const ESGReporter = {
                 <div class="two-col" style="align-items: stretch;">
                     <!-- Left: Verified Operations List -->
                     <div class="glass-card" style="margin:0; padding:24px; display:flex; flex-direction:column;">
-                        <h4 style="font-size:16px; margin-bottom:16px; font-family:'Space Grotesk';">Verified Activity Ledger</h4>
+                        <div class="esg-preview-header" style="margin-bottom: 20px; border-bottom: 1px dashed var(--border); padding-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-family:'Space Grotesk'; font-size:16px; font-weight:700; color:var(--text);"><span style="margin-right:6px;">🛡️</span> Verified Activity Ledger</div>
+                            <span style="font-size:11px; font-weight:600; color:var(--text-muted); background:var(--border); padding:4px 8px; border-radius:6px;">Ledger Sync: Active</span>
+                        </div>
                         <div style="flex:1; overflow-y:auto; max-height:480px; padding-right:4px;">
                             ${history.length ? history.map(o => {
                                 const orderHash = o.txHash || ESGReporter.generateAuditHash().slice(0, 18) + '...';
@@ -276,7 +291,7 @@ export const ESGReporter = {
                 ease: 'power2.out',
                 onUpdate: () => {
                     const el = document.getElementById('esg-counter-waste');
-                    if (el) el.innerHTML = Math.floor(wasteObj.val).toLocaleString() + ` <span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">kg</span>`;
+                    if (el) el.textContent = Math.floor(wasteObj.val).toLocaleString();
                 }
             });
 
@@ -287,7 +302,7 @@ export const ESGReporter = {
                 ease: 'power2.out',
                 onUpdate: () => {
                     const el = document.getElementById('esg-counter-co2');
-                    if (el) el.innerHTML = Math.floor(co2Obj.val).toLocaleString() + ` <span style="font-size:16px; margin-left:4px; font-weight:700; color:var(--text-muted);">kg CO₂</span>`;
+                    if (el) el.textContent = Math.floor(co2Obj.val).toLocaleString();
                 }
             });
         }
