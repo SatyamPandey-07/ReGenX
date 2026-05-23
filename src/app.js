@@ -8,7 +8,6 @@ import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
 import { ReGenXRealtime } from './realtime-sync.js';
 import { CloudSync } from './cloud-sync.js';
-
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = STORAGE_KEY_PREFIX + "trust-ledger";
 const ESG_ALERTS_KEY = STORAGE_KEY_PREFIX + "esg-alerts";
@@ -31,6 +30,9 @@ if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data?.type === 'SYNC_COMPLETE') {
           window.showToast(event.data.message);
+          if (typeof flushOfflineQueue === 'function') {
+            flushOfflineQueue();
+          }
         }
         if (event.data?.type === 'NAVIGATE') {
           window.showView && window.showView('v-rd-dash');
@@ -153,9 +155,7 @@ window.addEventListener('offline', () => {
 });
 window.addEventListener('online', () => {
   window.showToast && window.showToast('✅ Back online! Syncing queued data...');
-  if (window.CloudSync?.isLive) {
-    window.CloudSync.flushOfflineQueue();
-  }
+  if (window.syncPendingActions) window.syncPendingActions();
 });
 
 
@@ -167,6 +167,10 @@ const DEFAULT_LOCALITIES = [
 
 const WASTE_TYPES = ['Food waste (wet)', 'Vegetable scraps', 'Mixed kitchen waste', 'Biodegradable packaging'];
 const SHIFTS = ['Morning Shift (08:00 - 12:00)', 'Evening Shift (16:00 - 20:00)'];
+const NOTIF_STORE_KEY = 'notifications';
+const OFFLINE_QUEUE_KEY = 'offline-sync-queue';
+const MAX_NOTIF_HISTORY = 60;
+const DEDUP_WINDOW_MS = 30000;
 
 // ── DB HELPER ──
 const DB = {
@@ -213,6 +217,315 @@ const DB = {
   }
 };
 
+function loadNotifications() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_PREFIX + NOTIF_STORE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveNotifications(notifs) {
+  try { window.localStorage.setItem(STORAGE_KEY_PREFIX + NOTIF_STORE_KEY, JSON.stringify(notifs)); } catch { /* ignore */ }
+}
+
+function getNotificationsForRole(role) {
+  const all = loadNotifications();
+  return all.filter(n => n.role === 'all' || n.role === role).sort((a, b) => b.ts - a.ts);
+}
+
+function getUnreadNotificationCount(role) {
+  return getNotificationsForRole(role).filter(n => !n.read).length;
+}
+
+function loadOfflineQueue() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_PREFIX + OFFLINE_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOfflineQueue(queue) {
+  try { window.localStorage.setItem(STORAGE_KEY_PREFIX + OFFLINE_QUEUE_KEY, JSON.stringify(queue)); } catch { /* ignore */ }
+}
+
+function updateNotificationBadge() {
+  const badge = document.getElementById('notif-count');
+  const unread = getUnreadNotificationCount(SESSION.role);
+  if (badge) {
+    badge.textContent = unread > 0 ? unread : '0';
+    badge.style.display = 'inline-flex';
+    badge.style.opacity = unread ? '1' : '0.65';
+  }
+  const label = document.getElementById('notif-unread-count');
+  if (label) {
+    label.textContent = `${unread} unread notification${unread === 1 ? '' : 's'}`;
+  }
+}
+
+function updateOfflineQueueIndicator() {
+  const queueCount = loadOfflineQueue().length;
+  const statusLabel = document.getElementById('notif-sync-status');
+  if (statusLabel) {
+    statusLabel.textContent = queueCount
+      ? `${queueCount} pending sync action${queueCount === 1 ? '' : 's'}`
+      : 'All activity synced';
+    statusLabel.classList.toggle('sync-pending', queueCount > 0);
+  }
+}
+
+function isDuplicateNotification(title, body) {
+  const now = Date.now();
+  const duplicates = loadNotifications().filter(n => n.title === title && n.body === body && (now - n.ts) < DEDUP_WINDOW_MS);
+  return duplicates.length > 0;
+}
+
+function sendBrowserNotification(title, body, url = '/') {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const notification = new Notification(title, {
+      body,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/icon-72x72.png',
+      data: { url }
+    });
+    notification.onclick = () => window.focus() && window.location.assign(url);
+  } catch (e) {
+    console.warn('Browser notification failed', e);
+  }
+}
+
+function pushActivityFeed(event) {
+  const feed = document.getElementById('gw-feed');
+  if (!feed) return;
+  const item = document.createElement('div');
+  item.className = 'gw-item';
+  item.innerHTML = `
+    <div>${event.icon || '🔔'} ${event.title}</div>
+    <div class="gw-time">${fmtDate(event.ts || Date.now())}</div>
+  `;
+  const first = feed.firstChild;
+  if (first && first.classList.contains('gw-item') && first.textContent.includes('No network activity')) {
+    feed.innerHTML = '';
+  }
+  feed.prepend(item);
+  while (feed.children.length > 6) feed.removeChild(feed.lastChild);
+}
+
+function addWorkflowNotification({ title, body, role = 'all', type = 'workflow', priority = 'normal', relatedId = null, url = '/' }) {
+  if (!title || !body) return;
+  if (isDuplicateNotification(title, body)) return;
+  const notifications = loadNotifications();
+  const item = {
+    id: uid(),
+    ts: ts(),
+    title,
+    body,
+    type,
+    role,
+    priority,
+    relatedId,
+    url,
+    read: false
+  };
+  notifications.unshift(item);
+  saveNotifications(notifications.slice(0, MAX_NOTIF_HISTORY));
+  updateNotificationBadge();
+  renderNotificationCenter();
+  if (priority === 'high' || Notification.permission === 'granted') {
+    sendBrowserNotification(title, body, url);
+  }
+  if (window.showToast) {
+    window.showToast(`🔔 ${title}`);
+  }
+  pushActivityFeed({ title, icon: priority === 'high' ? '🚨' : '🔔', ts: item.ts });
+}
+
+window.openNotificationCenter = function(force) {
+  const drawer = document.getElementById('notification-drawer');
+  if (!drawer) return;
+  const isOpen = force === undefined ? !drawer.classList.contains('open') : force;
+  drawer.classList.toggle('open', isOpen);
+  if (isOpen) {
+    renderNotificationCenter();
+    updateNotificationBadge();
+    updateOfflineQueueIndicator();
+  }
+};
+
+function renderNotificationCenter() {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  const notifications = getNotificationsForRole(SESSION.role);
+  if (!notifications.length) {
+    list.innerHTML = `<div class="notification-empty">No notifications yet. Workflow alerts will appear here in real time.</div>`;
+    return;
+  }
+  list.innerHTML = notifications.map(n => `
+    <div class="notification-card ${n.read ? 'read' : 'unread'}">
+      <div class="notification-card-header">
+        <div class="notification-card-title">${n.title}</div>
+        <div class="notification-card-meta">${fmtDate(n.ts)}</div>
+      </div>
+      <div class="notification-card-body">${n.body}</div>
+      <div class="notification-card-actions">
+        <button class="btn btn-ghost btn-sm" onclick="markNotificationRead('${n.id}')">Mark read</button>
+        <button class="btn btn-ghost btn-sm" onclick="window.location.href='${n.url}'">View</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.markNotificationRead = function(id) {
+  const notifications = loadNotifications();
+  const target = notifications.find(n => n.id === id);
+  if (target) target.read = true;
+  saveNotifications(notifications);
+  renderNotificationCenter();
+  updateNotificationBadge();
+};
+
+window.markAllNotificationsRead = function() {
+  const notifications = loadNotifications().map(n => ({ ...n, read: true }));
+  saveNotifications(notifications);
+  renderNotificationCenter();
+  updateNotificationBadge();
+};
+
+function queueOfflineAction(action) {
+  if (!action || !action.type) return;
+  const queue = loadOfflineQueue();
+  queue.push({ id: uid(), ts: ts(), ...action });
+  saveOfflineQueue(queue);
+  updateOfflineQueueIndicator();
+}
+
+async function processOfflineAction(action) {
+  if (!action || !action.type) return;
+  if (action.type === 'sync-order') {
+    if (window.CloudSync && window.CloudSync.isLive && navigator.onLine) {
+      window.CloudSync.pushDocument('orders', action.payload);
+    }
+  }
+  if (action.type === 'sync-notification') {
+    // notifications are already stored locally; this entry is a marker for remote sync
+  }
+}
+
+async function flushOfflineQueue() {
+  const queue = loadOfflineQueue();
+  if (!queue.length) return;
+  for (const action of queue) {
+    await processOfflineAction(action);
+  }
+  saveOfflineQueue([]);
+  updateOfflineQueueIndicator();
+  addWorkflowNotification({
+    title: 'Offline Sync Completed',
+    body: `${queue.length} queued action${queue.length === 1 ? '' : 's'} were synced successfully.`,
+    role: SESSION.role || 'all',
+    type: 'sync',
+    priority: 'normal'
+  });
+}
+
+window.syncPendingActions = async function() {
+  if (!navigator.onLine) return;
+  if (window._swReg && 'sync' in window._swReg) {
+    window._swReg.sync.register('regenx-order-sync').catch(() => {});
+  }
+  await flushOfflineQueue();
+};
+
+window.handleRealtimeEvent = function(event) {
+  if (!event || !event.type) return;
+  const payload = event.payload || {};
+  switch (event.type) {
+    case 'dispatch-created':
+      addWorkflowNotification({
+        title: 'New Nearby Pickup Request',
+        body: `${payload.providerOrg || 'A provider'} requested ${payload.kg || 'some'}kg of ${payload.wasteType || 'waste'}.`,
+        role: 'rider',
+        type: 'dispatch-created',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'pickup-assigned':
+      addWorkflowNotification({
+        title: 'Pickup Accepted',
+        body: `${payload.riderName || 'A rider'} has accepted the pickup request.`,
+        role: 'provider',
+        type: 'pickup-assigned',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'pickup-confirmed':
+      addWorkflowNotification({
+        title: 'Waste Collected',
+        body: `${payload.riderName || 'Your rider'} has picked up the load.`,
+        role: 'plant',
+        type: 'pickup-confirmed',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'delivery-confirmed':
+      addWorkflowNotification({
+        title: 'Plant Confirmation Received',
+        body: `${payload.plantName || 'A plant'} confirmed the delivery.`,
+        role: 'provider',
+        type: 'delivery-confirmed',
+        priority: 'normal',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'token-credited':
+      addWorkflowNotification({
+        title: 'Reward Credited',
+        body: `${payload.tokens || 0} $RGX have been added to your balance.`,
+        role: 'provider',
+        type: 'token-credited',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    case 'ai-warning':
+      addWorkflowNotification({
+        title: 'AI Contamination Alert',
+        body: payload.body || 'A contamination risk was detected on pickup.',
+        role: 'rider',
+        type: 'ai-warning',
+        priority: 'high',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+    default:
+      addWorkflowNotification({
+        title: event.title || 'Workflow Update',
+        body: event.body || 'A new system event occurred.',
+        role: SESSION.role || 'all',
+        type: event.type,
+        priority: 'normal',
+        relatedId: payload.id,
+        url: '/'
+      });
+      break;
+  }
+};
+
 function getRealtimeRoomsForRole(role) {
   const rooms = ['network_room'];
   if (role === 'provider') rooms.push('providers_room');
@@ -231,7 +544,6 @@ function publishOperationalEvent(type, updates = [], meta = {}, rooms = null) {
     meta
   });
 }
-
 /**
  * Load trust ledger events from localStorage.
  * @returns {Array<Object>} Ledger events.
@@ -1694,7 +2006,8 @@ function executeLogin(acc) {
   startTicker();
   const gwWidget = document.getElementById('green-wall-widget');
   if(gwWidget) { gwWidget.style.display = 'flex'; startGreenWall(); }
-  
+  updateNotificationBadge();
+  updateOfflineQueueIndicator();
   buildSidebar();
   autoRefreshTimer = setInterval(() => refreshCurrentView(), 15000);
   ReGenXRealtime?.setSession(SESSION);
@@ -1806,7 +2119,13 @@ window.toggleSidebar = function(force) {
 function getAllOrders() { return DB.list('ord:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 function getOrder(id) { return DB.get('ord:'+id); }
 function saveOrder(o) { 
+  // persist locally and publish to realtime and cloud sync when available
   DB.set('ord:'+o.id, o, { rooms: ['network_room', 'providers_room', 'riders_room', 'plants_room', 'admin_room'], eventType: 'KPI_UPDATED' });
+  if (window.CloudSync && window.CloudSync.isLive && navigator.onLine) {
+    window.CloudSync.pushDocument('orders', o);
+  } else {
+    queueOfflineAction({ type: 'sync-order', payload: o });
+  }
 }
 function getAllLogs() { return DB.list('log:').map(k => DB.get(k)).filter(Boolean).sort((a,b)=>b.ts-a.ts); }
 
@@ -2940,6 +3259,7 @@ window.closeModal = function() {
   const mb = document.getElementById('modal-box');
   if(mb) {
     mb.classList.remove('modal-large');
+    mb.classList.remove('integrity-modal');
     mb.innerHTML = '';
   }
 }
@@ -3042,7 +3362,34 @@ window.submitPvRequest = async function() {
   };
   saveOrder(o);
   addSlaEntry(o);
-  await recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+ await recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Pickup Accepted',
+    body: `${SESSION.name} accepted the pickup for ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'pickup-assigned',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Job Assigned',
+    body: `You accepted pickup for ${o.providerOrg} (${o.kg}kg).`,
+    role: 'rider',
+    type: 'pickup-assigned',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Incoming Shipment En Route',
+    body: `Rider ${SESSION.name} is heading to collect the waste.`,
+    role: 'plant',
+    type: 'pickup-assigned',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
   publishOperationalEvent('DISPATCH_CREATED', [], {
     toast: `New dispatch created for ${nearest.org}.`,
     statusLabel: 'Dispatch live'
@@ -3466,7 +3813,35 @@ window.riderAccept = async function(id) {
   o.status = 'assigned'; o.riderId = SESSION.id; o.riderName = SESSION.name;
   saveOrder(o);
   updateSlaEntry(o.id, { status: 'assigned' });
-  await recordTrustEvent(o, 'assigned', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'requested', 'provider', { lat: SESSION.lat, lng: SESSION.lng });
+  // Notify local roles and publish an operational realtime event
+  addWorkflowNotification({
+    title: 'Dispatch Created',
+    body: `Your pickup request for ${kg}kg of ${type} has been sent to ${nearest.org}.`,
+    role: 'provider',
+    type: 'dispatch-created',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'New Nearby Pickup Request',
+    body: `${SESSION.org} requested ${kg}kg of ${type}.`,
+    role: 'rider',
+    type: 'dispatch-created',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Incoming Waste Shipment Alert',
+    body: `${kg}kg from ${SESSION.org} is routed to your plant.`,
+    role: 'plant',
+    type: 'dispatch-created',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Rider ${SESSION.name} accepted dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Route assigned'
@@ -3478,7 +3853,29 @@ window.riderUpdate = async function(id, st) {
   const o = getOrder(id); if(!o) return;
   o.status = st; saveOrder(o);
   updateSlaEntry(o.id, { status: st });
-  await recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, st, 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  if (st === 'en_route') {
+    addWorkflowNotification({
+      title: 'Rider En Route',
+      body: `${SESSION.name} is on the way to ${o.providerOrg}.`,
+      role: 'provider',
+      type: 'pickup-progress',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
+  if (st === 'at_plant') {
+    addWorkflowNotification({
+      title: 'Arrival at Plant',
+      body: `${SESSION.name} has arrived at ${o.plantName} with the load.`,
+      role: 'plant',
+      type: 'pickup-progress',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
   publishOperationalEvent('KPI_UPDATED', [], {
     toast: `Dispatch #${o.id.slice(-6).toUpperCase()} moved to ${st.replace('_', ' ')}.`,
     statusLabel: 'Route moving'
@@ -3502,7 +3899,25 @@ window.confirmPickup = async function(id) {
   const o = getOrder(id); o.status = 'picked_up'; o.actualKg = kg; o.quality = document.getElementById('m-qual').value;
   saveOrder(o);
   updateSlaEntry(o.id, { pickupTs: ts(), status: 'picked_up' });
-  await recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'picked_up', 'rider', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Pickup Confirmed',
+    body: `${SESSION.name} collected ${kg}kg from ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'pickup-confirmed',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  addWorkflowNotification({
+    title: 'Load Sent to Plant',
+    body: `The load is now verified and on its way to ${o.plantName}.`,
+    role: 'plant',
+    type: 'pickup-confirmed',
+    priority: 'normal',
+    relatedId: o.id,
+    url: '/'
+  });
   publishOperationalEvent('PICKUP_CONFIRMED', [], {
     toast: `Pickup confirmed for dispatch #${o.id.slice(-6).toUpperCase()}.`,
     statusLabel: 'Pickup live'
@@ -3631,12 +4046,6 @@ window.openIntegrityScan = function(orderId) {
       </div>
     `;
   }, 900);
-}
-window.closeModal = function() {
-  const modal = document.getElementById('modal');
-  const box = document.getElementById('modal-box');
-  if (modal) modal.classList.remove('open');
-  if (box) box.classList.remove('integrity-modal');
 }
 
 window.openSettings = function() {
@@ -3998,8 +4407,37 @@ window.confirmPlantReceipt = async function(id) {
 
   saveOrder(o);
   updateSlaEntry(o.id, { completeTs: ts(), status: 'completed' });
-  await recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+await recordTrustEvent(o, 'completed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
   await recordTrustEvent(o, 'sealed', 'plant', { lat: SESSION.lat, lng: SESSION.lng });
+  addWorkflowNotification({
+    title: 'Plant Confirmation Received',
+    body: `${o.plantName} confirmed the delivery for ${o.providerOrg}.`,
+    role: 'provider',
+    type: 'delivery-confirmed',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
+  if (o.riderName) {
+    addWorkflowNotification({
+      title: 'Delivery Confirmed',
+      body: `${o.plantName} confirmed the delivery of your load.`,
+      role: 'rider',
+      type: 'delivery-confirmed',
+      priority: 'normal',
+      relatedId: o.id,
+      url: '/'
+    });
+  }
+  addWorkflowNotification({
+    title: 'Token Rewards Credited',
+    body: `${earnedTokens} $RGX minted for ${o.providerOrg} after successful intake.`,
+    role: 'provider',
+    type: 'token-credited',
+    priority: 'high',
+    relatedId: o.id,
+    url: '/'
+  });
   addEsgAlertsForOrder(o);
 
   const kgProcessed = parseFloat(o.actualKg || o.kg || 0);
@@ -4066,6 +4504,14 @@ window.savePlantLog = function() {
   if(!bio && !comp) return window.showToast("⚠ Enter output values.");
   
   DB.set('log:'+uid(), { id: uid(), ts: ts(), plantId: SESSION.id, bio, comp, temp: document.getElementById('out-temp').value });
+  addWorkflowNotification({
+    title: 'Plant Output Logged',
+    body: `Your plant output record was saved successfully.`,
+    role: 'plant',
+    type: 'plant-log',
+    priority: 'normal',
+    url: '/'
+  });
   window.showToast("✓ Output logged! Automated msg sent.");
   showView('v-pl-dash');
 }
@@ -4527,14 +4973,6 @@ function exportTagsAsTxt(tags) {
   a.download = 'regenx-tags.txt';
   a.click();
   URL.revokeObjectURL(url);
-}
-
-function showToast(message) {
-  const toast = document.createElement('div');
-  toast.className = 'copy-toast';
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2500);
 }
 
 // ==========================================

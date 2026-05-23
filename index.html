@@ -47,6 +47,7 @@
   <script src="./src/scanner.js?v=11"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://cdn.jsdelivr.net/npm/appwrite@14.0.1"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script type="module" src="./src/app.js?v=11"></script>
 
 </head>
@@ -250,6 +251,9 @@ margin-top:18px;
               <div class="topbar-name" id="tb-name">—</div>
               <div class="topbar-role" id="tb-role">—</div>
             </div>
+            <button class="btn btn-ghost btn-sm" id="notif-toggle-btn" onclick="openNotificationCenter()" title="Notifications">
+              🔔 <span id="notif-count" class="notif-badge">0</span>
+            </button>
             <div class="topbar-avatar" id="tb-avatar" style="cursor:pointer;" onclick="openSettings()"
               title="Profile Settings"></div>
             <button class="btn btn-ghost btn-sm topbar-logout" onclick="doLogout()">
@@ -269,10 +273,28 @@ margin-top:18px;
 
   <!-- Global Components -->
   <div id="toast"></div>
+
+  <div id="notification-drawer" class="notification-drawer">
+    <div class="notification-drawer-header">
+      <div>
+        <div class="drawer-title">Activity Center</div>
+        <div class="drawer-sub">Live workflow alerts, sync status and recent events.</div>
+      </div>
+      <div class="drawer-actions">
+        <button class="btn btn-ghost btn-sm" onclick="markAllNotificationsRead()">Mark all read</button>
+        <button class="close-drawer" onclick="openNotificationCenter(false)">×</button>
+      </div>
+    </div>
+    <div class="notification-meta">
+      <span id="notif-unread-count">0 unread</span>
+      <span id="notif-sync-status" class="notif-sync">All activity synced</span>
+    </div>
+    <div id="notif-list" class="notification-list"></div>
+  </div>
+
   <div class="modal-overlay" id="modal" onclick="if(event.target === this) closeScanner()">
     <div class="modal-box glass-card" id="modal-box"></div>
   </div>
-
 
 </body>
 
