@@ -7,6 +7,7 @@ import { YieldOptimizer } from './yield-optimizer.js';
 import { RouteOptimizer } from './route-optimizer.js';
 import { AuditPortal } from './audit-portal.js';
 import { CloudSync } from './cloud-sync.js';
+import { ESGReporter } from './esg-reporter.js';
 
 const STORAGE_KEY_PREFIX = "regenx-v3:";
 const TRUST_LEDGER_KEY = "trust-ledger";
@@ -1329,6 +1330,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-market')" id="nav-v-market"><span class="nav-item-icon">🛒</span> ReGen Exchange</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
@@ -1346,6 +1348,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-rd-dash');
@@ -1362,6 +1365,7 @@ function buildSidebar() {
       <button class="nav-item" onclick="showView('v-sensor')" id="nav-v-sensor"><span class="nav-item-icon">📡</span> Sensor Reliability</button>
       <button class="nav-item" onclick="showView('v-emissions')" id="nav-v-emissions"><span class="nav-item-icon">🌫️</span> Emissions Tracker</button>
       <button class="nav-item" onclick="showView('v-quality')" id="nav-v-quality"><span class="nav-item-icon">🧪</span> Quality Index</button>
+      <button class="nav-item" onclick="showView('v-esg-hub')" id="nav-v-esg-hub"><span class="nav-item-icon">🌱</span> Sustainability Hub</button>
       <button class="nav-item" onclick="showView('v-audit-portal')" id="nav-v-audit-portal"><span class="nav-item-icon">🔒</span> Public Verification</button>
     `;
     showView('v-pl-dash');
@@ -1375,7 +1379,17 @@ window.showView = function(viewId) {
   if(btn) btn.classList.add('active');
   
   // Set Title
-  const titleMap = { 'v-iot-bins': 'IoT Sensory Bins', 'v-compliance': 'Compliance Center', 'v-reconciliation': 'Reconciliation', 'v-sla': 'SLA Monitor', 'v-energy': 'Energy Scorecard', 'v-sensor': 'Sensor Reliability', 'v-emissions': 'Emissions Tracker', 'v-quality': 'Quality Index' };
+  const titleMap = { 
+    'v-iot-bins': 'IoT Sensory Bins', 
+    'v-compliance': 'Compliance Center', 
+    'v-reconciliation': 'Reconciliation', 
+    'v-sla': 'SLA Monitor', 
+    'v-energy': 'Energy Scorecard', 
+    'v-sensor': 'Sensor Reliability', 
+    'v-emissions': 'Emissions Tracker', 
+    'v-quality': 'Quality Index',
+    'v-esg-hub': 'Sustainability Report Hub'
+  };
   if(btn) document.getElementById('tb-view-title').textContent = titleMap[viewId] || btn.innerText.replace(/[^a-zA-Z\s]/g, '').trim();
   
   if (window.innerWidth <= 768) toggleSidebar(false);
@@ -1610,6 +1624,16 @@ function buildOrderCard(o, role) {
 // ── REFRESH CONTROLLER ──
 async function refreshCurrentView(fullRender = false) {
   const mc = document.getElementById('main-content');
+  if (currentView === 'v-esg-hub') {
+    const history = getAllOrders().filter(o => {
+      if (SESSION.role === 'provider') return o.providerId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'plant') return o.plantId === SESSION.id && o.status === 'completed';
+      if (SESSION.role === 'rider') return o.riderId === SESSION.id && o.status === 'completed';
+      return false;
+    });
+    ESGReporter.renderHub(mc, fullRender, SESSION, history);
+    return;
+  }
   if (currentView === 'v-audit-portal') {
     AuditPortal.renderPortal(mc, fullRender);
     return;
